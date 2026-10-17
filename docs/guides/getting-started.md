@@ -83,6 +83,8 @@ resource "kanidm_oauth2_basic" "grafana" {
 
 `redirect_uris`, scope sets, and claim values are treated as unordered sets to match Kanidm storage behavior.
 
+The basic client resource does not store the client secret. Read it during a run with `kanidm_oauth2_basic_secret`, and pass the client's `id` so the read waits until the client exists.
+
 ## Create an Application Entry
 
 ```hcl

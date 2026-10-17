@@ -1,4 +1,5 @@
-# Example: OAuth2 client for Grafana
+# Example: OAuth2 client for Grafana.
+# The client secret is not stored. Read it with kanidm_oauth2_basic_secret.
 resource "kanidm_oauth2_basic" "grafana" {
   name        = "grafana"
   displayname = "Grafana"
@@ -18,13 +19,6 @@ resource "kanidm_oauth2_basic" "grafana" {
     group  = "developers"
     scopes = ["openid", "profile", "email"]
   }
-}
-
-# Store the client secret securely
-output "grafana_client_secret" {
-  description = "OAuth2 client secret for Grafana"
-  value       = kanidm_oauth2_basic.grafana.client_secret
-  sensitive   = true
 }
 
 # Example: OAuth2 client for Authentik
@@ -77,16 +71,8 @@ resource "kanidm_oauth2_basic" "simple_app" {
 
 # Example: Imported existing OAuth2 client
 # Import command: terraform import kanidm_oauth2_basic.existing client_name
-# Note: Client secret will be automatically retrieved from Kanidm after import
 resource "kanidm_oauth2_basic" "existing" {
   name        = "existing-client"
   displayname = "Existing OAuth2 Client"
   origin      = "https://existing.example.com"
-}
-
-# The client secret is available even for imported clients
-output "existing_client_secret" {
-  description = "OAuth2 client secret for imported client"
-  value       = kanidm_oauth2_basic.existing.client_secret
-  sensitive   = true
 }

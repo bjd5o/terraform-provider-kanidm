@@ -7,14 +7,14 @@ The official Terraform provider for [Kanidm](https://kanidm.com), enabling Infra
 
 ## Features
 
-- **Person Accounts** - Manage user accounts with password or passkey authentication
-- **Service Accounts** - Automated systems with API token generation
+- **Person Accounts** - Manage user accounts. An optional password is write-only and never stored
+- **Service Accounts** - Automated systems. API tokens are minted by the OpenBao Kanidm secrets engine, not this provider
 - **Groups** - Organize users and service accounts with membership management
-- **OAuth2 Clients** - Configure OAuth2/OIDC integration with scope mapping
+- **OAuth2 Clients** - Configure OAuth2/OIDC integration with scope mapping. Basic client secrets are read with an ephemeral resource
 
 ## Requirements
 
-- [Terraform](https://www.terraform.io/downloads.html) >= 1.0
+- [OpenTofu](https://opentofu.org/) or [Terraform](https://www.terraform.io/downloads.html) >= 1.11 (required for write-only attributes)
 - [Go](https://golang.org/doc/install) >= 1.24 (for development)
 - [Kanidm](https://kanidm.com) >= 1.8.5
 
@@ -48,35 +48,29 @@ go build -o terraform-provider-kanidm
 
 ## Usage Examples
 
-### Person Account with Passkey Authentication (Recommended)
+### Person Account
+
+`password_wo` is sent to Kanidm and is not stored. Increase `password_wo_version` to change it. Credential reset tokens are minted outside OpenTofu.
 
 ```hcl
 resource "kanidm_person" "alice" {
-  name                                   = "alice"
-  displayname                            = "Alice Smith"
-  mail                                   = ["alice@example.com"]
-  generate_initial_credential_reset_token = true
-  initial_credential_reset_token_ttl      = 7200  # 2 hours
-}
-
-# Output the credential reset token for user setup
-output "alice_reset_token" {
-  value     = kanidm_person.alice.initial_credential_reset_token
-  sensitive = true
+  name                = "alice"
+  displayname         = "Alice Smith"
+  mail                = ["alice@example.com"]
+  password_wo         = ephemeral.vault_generic_secret.alice.data.password
+  password_wo_version = 1
 }
 ```
 
-### Service Account with API Token
+### Service Account
+
+This resource does not mint an API token. Set `entry_managed_by` if you are using an external secrets engine to mint tokens.
 
 ```hcl
-resource "kanidm_service_account" "terraform" {
-  name        = "terraform-automation"
-  displayname = "Terraform Automation Account"
-}
-
-output "terraform_api_token" {
-  value     = kanidm_service_account.terraform.api_token
-  sensitive = true
+resource "kanidm_service_account" "mailer" {
+  name             = "mailer"
+  displayname      = "Mailer"
+  entry_managed_by = "openbao-token-issuers"
 }
 ```
 
@@ -119,9 +113,8 @@ resource "kanidm_oauth2_basic" "grafana" {
   ]
 }
 
-output "grafana_client_secret" {
-  value     = kanidm_oauth2_basic.grafana.client_secret
-  sensitive = true
+ephemeral "kanidm_oauth2_basic_secret" "grafana" {
+  client = kanidm_oauth2_basic.grafana.id
 }
 ```
 
@@ -169,10 +162,11 @@ provider "kanidm" {
 
 ## Resources
 
-- `kanidm_person` - Person accounts with credential management
-- `kanidm_service_account` - Service accounts with API tokens
+- `kanidm_person` - Person accounts, with an optional write-only password
+- `kanidm_service_account` - Service accounts. Tokens are minted outside this provider
 - `kanidm_group` - Groups with membership management
 - `kanidm_oauth2_basic` - OAuth2 basic (confidential) clients
+- `kanidm_oauth2_basic_secret` - Ephemeral read of a basic client secret
 
 ## Development
 
@@ -258,8 +252,8 @@ terraform-provider-kanidm/
 
 ## Roadmap
 
-- [x] Person resource with password and passkey authentication
-- [x] Service account resource with API tokens
+- [x] Person resource with an optional write-only password
+- [x] Service account resource without API tokens
 - [x] Group resource with membership management
 - [x] OAuth2 basic (confidential) client resource
 - [ ] OAuth2 public client resource

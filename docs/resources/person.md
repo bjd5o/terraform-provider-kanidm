@@ -4,104 +4,57 @@ page_title: "kanidm_person Resource - kanidm"
 subcategory: "Identity"
 description: |-
   Manages a Kanidm person account.
-  Authentication Setup
-  Kanidm supports two credential setup workflows:
-  Password-Based Authentication
-  Set the password attribute to create a password-based account:
+  Requires OpenTofu or Terraform 1.11 or later, because password_wo is write-only.
+  Password
+  password_wo is sent to Kanidm and is never stored in the plan or state. Set password_wo_version to a number and increase it when the password should change. Changing password_wo alone does not produce a plan diff, because OpenTofu cannot see a write-only value.
   
-  resource "kanidm_person" "example" {
-    name        = "jdoe"
-    displayname = "John Doe"
-    password    = var.initial_password
+  resource "kanidm_person" "alice" {
+    name                = "alice"
+    displayname         = "Alice"
+    password_wo         = ephemeral.vault_generic_secret.alice.data.password
+    password_wo_version = 1
   }
   
-  Passkey/Modern Authentication (Recommended)
-  Set generate_initial_credential_reset_token = true to generate a one-time onboarding token for credential setup via the Kanidm web UI:
-  
-  resource "kanidm_person" "example" {
-    name                          = "jdoe"
-    displayname                   = "John Doe"
-    generate_initial_credential_reset_token = true
-  }
-  
-  output "initial_credential_reset_token" {
-    value     = kanidm_person.example.initial_credential_reset_token
-    sensitive = true
-  }
-  
-  The user can then visit the Kanidm web UI with the token to set up passkeys or passwords.
+  Credential reset tokens are minted outside OpenTofu, for example by the mailer. This resource does not generate them.
 ---
 
 # kanidm_person (Resource)
 
 Manages a Kanidm person account.
 
-## Authentication Setup
+Requires OpenTofu or Terraform 1.11 or later, because `password_wo` is write-only.
 
-Kanidm supports two credential setup workflows:
+## Password
 
-### Password-Based Authentication
-Set the `password` attribute to create a password-based account:
+`password_wo` is sent to Kanidm and is never stored in the plan or state. Set `password_wo_version` to a number and increase it when the password should change. Changing `password_wo` alone does not produce a plan diff, because OpenTofu cannot see a write-only value.
 
 ```hcl
-resource "kanidm_person" "example" {
-  name        = "jdoe"
-  displayname = "John Doe"
-  password    = var.initial_password
+resource "kanidm_person" "alice" {
+  name                = "alice"
+  displayname         = "Alice"
+  password_wo         = ephemeral.vault_generic_secret.alice.data.password
+  password_wo_version = 1
 }
 ```
 
-### Passkey/Modern Authentication (Recommended)
-Set `generate_initial_credential_reset_token = true` to generate a one-time onboarding token for credential setup via the Kanidm web UI:
-
-```hcl
-resource "kanidm_person" "example" {
-  name                          = "jdoe"
-  displayname                   = "John Doe"
-  generate_initial_credential_reset_token = true
-}
-
-output "initial_credential_reset_token" {
-  value     = kanidm_person.example.initial_credential_reset_token
-  sensitive = true
-}
-```
-
-The user can then visit the Kanidm web UI with the token to set up passkeys or passwords.
+Credential reset tokens are minted outside OpenTofu, for example by the mailer. This resource does not generate them.
 
 ## Example Usage
 
 ```terraform
-# Example: Person account with password-based authentication
-resource "kanidm_person" "alice_password" {
-  name        = "alice"
-  displayname = "Alice Smith"
-  mail        = ["alice@example.com"]
-  password    = var.alice_password
-
-  lifecycle {
-    # Ignore password changes after creation (managed externally)
-    ignore_changes = [password]
-  }
+# Example: Person account with a write-only initial password.
+# password_wo is sent to Kanidm and is not stored in the plan or state.
+# Increase password_wo_version to change the password.
+resource "kanidm_person" "alice" {
+  name                = "alice"
+  displayname         = "Alice Smith"
+  mail                = ["alice@example.com"]
+  password_wo         = ephemeral.vault_generic_secret.alice.data.password
+  password_wo_version = 1
 }
 
-# Example: Person account with passkey/modern authentication (recommended)
-resource "kanidm_person" "bob_passkey" {
-  name                                   = "bob"
-  displayname                            = "Bob Johnson"
-  mail                                   = ["bob@example.com"]
-  generate_initial_credential_reset_token = true
-  initial_credential_reset_token_ttl      = 7200 # 2 hours
-}
-
-# Output the credential reset token for Bob
-output "bob_credential_reset_token" {
-  description = "One-time token for Bob to set up credentials via Kanidm web UI"
-  value       = kanidm_person.bob_passkey.initial_credential_reset_token
-  sensitive   = true
-}
-
-# Example: Person account without initial credentials
+# Example: Person account without a password.
+# Credential reset tokens are minted outside OpenTofu, for example by the mailer.
 resource "kanidm_person" "charlie" {
   name        = "charlie"
   displayname = "Charlie Brown"
@@ -126,16 +79,17 @@ resource "kanidm_person" "existing_user" {
 
 ### Optional
 
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
+
 - `display_management` (String) How Terraform manages `displayname`. Valid values: `managed`, `initial`.
 - `expire_at` (String) RFC3339 time when the person account expires. Use `null` to leave unset.
-- `generate_initial_credential_reset_token` (Boolean) Whether to generate a one-time initial credential reset token for onboarding via the web UI. Mutually exclusive with `password`. Defaults to `false`.
 - `gidnumber` (Number) Optional POSIX gidnumber for the person. Computed after POSIX is enabled, even when Kanidm generates the value.
-- `initial_credential_reset_token_ttl` (Number) Time-to-live for the initial credential reset token in seconds. Defaults to 3600 (1 hour). Only used during resource creation.
 - `legalname` (String) Legal name of the person. Use `null` to leave it unset or clear it when managed.
 - `legalname_management` (String) How Terraform manages `legalname`. Valid values: `managed`, `initial`.
 - `mail` (List of String) Email addresses for the person.
 - `name_management` (String) How Terraform manages `name`. Valid values: `managed`, `initial`.
-- `password` (String, Sensitive) Password for the person account. **Note:** This is write-only and will not be stored in state. Mutually exclusive with `generate_initial_credential_reset_token`. Consider using `lifecycle { ignore_changes = [password] }` if the password is managed externally.
+- `password_wo` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Password sent to Kanidm when the person is created, and again on update when `password_wo_version` changes. Write-only: OpenTofu does not store it in the plan or state. Requires OpenTofu or Terraform 1.11 or later.
+- `password_wo_version` (Number) Version of `password_wo`. Only this number is stored. Increase it to apply a new password. Changing `password_wo` alone does nothing.
 - `posix_enabled` (Boolean) Whether POSIX support is enabled for the person. Enabling without a gidnumber lets Kanidm generate one automatically. Disabling after enablement is not currently supported.
 - `shell` (String) Optional login shell for the POSIX-enabled person.
 - `valid_from` (String) Earliest RFC3339 time when the person can authenticate. Use `null` to leave unset.
@@ -143,4 +97,3 @@ resource "kanidm_person" "existing_user" {
 ### Read-Only
 
 - `id` (String) Stable Kanidm UUID for this person. This value is computed after creation/import and used to keep the resource linked across external renames.
-- `initial_credential_reset_token` (String, Sensitive) The initial credential reset token generated during resource creation when `generate_initial_credential_reset_token` is `true`. This token can be used once to set up credentials via the Kanidm web UI. **Computed value only.**

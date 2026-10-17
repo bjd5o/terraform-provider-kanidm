@@ -9,7 +9,7 @@ description: |-
 
 Terraform provider for managing Kanidm identity resources.
 
-The provider manages Kanidm identities, groups, OAuth2 clients, application entries, and selected account/system policy objects.
+The provider manages Kanidm identities, groups, OAuth2 clients, application entries, and selected account/system policy objects. Credentials are not written to state or plan.
 
 ## Example Usage
 
@@ -68,6 +68,7 @@ provider "kanidm" {
 - `kanidm_system_denied_names`
 - `kanidm_oauth2_basic`
 - `kanidm_oauth2_public`
+- `kanidm_oauth2_basic_secret` (ephemeral)
 
 ## Notes
 
@@ -76,6 +77,8 @@ provider "kanidm" {
 - `kanidm_account_policy` is a separate resource so policies can be attached to both built-in and user-managed groups.
 - `kanidm_system_denied_names` is a singleton-style resource and depends on healthy Kanidm system configuration entries.
 - For lab or self-signed environments you can set `insecure_skip_verify = true` or `KANIDM_INSECURE_SKIP_VERIFY=true`.
+- `kanidm_person.password_wo` requires OpenTofu or Terraform 1.11 or later. Increase `password_wo_version` to change the password.
+- Read an OAuth2 basic client secret with `kanidm_oauth2_basic_secret`. Pass the client's `id` so the read waits until apply when the client is created in the same run.
 
 ## Guides
 
@@ -97,7 +100,5 @@ provider "kanidm" {
 Optional:
 
 - `display_management` (String) Default management mode for person display names. Valid values: `managed`, `initial`.
-- `generate_initial_credential_reset_token` (Boolean) Whether person resources should create an initial credential reset token during creation by default.
-- `initial_credential_reset_token_ttl` (Number) Default TTL in seconds for initial credential reset tokens generated during person creation.
 - `legalname_management` (String) Default management mode for person legal names. Valid values: `managed`, `initial`.
 - `name_management` (String) Default management mode for person names. Valid values: `managed`, `initial`.

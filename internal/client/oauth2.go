@@ -25,7 +25,6 @@ type OAuth2Client struct {
 	SupScopeMaps                []OAuth2ScopeMap
 	ClaimMaps                   []OAuth2ClaimMap
 	ClientID                    string // Computed
-	ClientSecret                string // Only for basic/confidential clients, populated on creation
 	IsPublic                    bool
 	PreferShortUsername         bool
 	PreferShortUsernameSet      bool
@@ -139,7 +138,7 @@ func (c *Client) ListOAuth2Clients(ctx context.Context) ([]OAuth2Client, error) 
 			clientName = entry.GetString("oauth2_rs_name")
 		}
 
-		origin := entry.GetString("oauth2_rs_origin_landing")
+		origin := trimTrailingSlash(entry.GetString("oauth2_rs_origin_landing"))
 
 		scopeMaps, err := parseScopeMapEntries(entry.GetStringSlice("oauth2_rs_scope_map"))
 		if err != nil {
@@ -179,6 +178,14 @@ func (c *Client) ListOAuth2Clients(ctx context.Context) ([]OAuth2Client, error) 
 	}
 
 	return clients, nil
+}
+
+// Kanidm stores oauth2_rs_origin_landing with a trailing slash.
+func trimTrailingSlash(value string) string {
+	if len(value) > 1 && value[len(value)-1] == '/' {
+		return value[:len(value)-1]
+	}
+	return value
 }
 
 func parseScopeMapEntries(rawEntries []string) ([]OAuth2ScopeMap, error) {
@@ -244,20 +251,12 @@ func (c *Client) CreateOAuth2BasicClient(ctx context.Context, name, displayName,
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// The create response doesn't include the client secret
-	// We need to retrieve it using the show secret endpoint
-	clientSecret, err := c.GetOAuth2BasicSecret(ctx, name)
-	if err != nil {
-		return nil, fmt.Errorf("retrieve client secret: %w", err)
-	}
-
 	return &OAuth2Client{
-		Name:         name,
-		DisplayName:  displayName,
-		Origin:       origin,
-		ClientID:     name, // Client ID is typically the name
-		ClientSecret: clientSecret,
-		IsPublic:     false,
+		Name:        name,
+		DisplayName: displayName,
+		Origin:      origin,
+		ClientID:    name,
+		IsPublic:    false,
 	}, nil
 }
 
@@ -309,10 +308,7 @@ func (c *Client) GetOAuth2Client(ctx context.Context, name string) (*OAuth2Clien
 
 	// Get origin and normalize by removing trailing slash if present
 	// (Kanidm adds trailing slash, but Terraform configs typically don't have it)
-	origin := entry.GetString("oauth2_rs_origin_landing")
-	if len(origin) > 0 && origin[len(origin)-1] == '/' {
-		origin = origin[:len(origin)-1]
-	}
+	origin := trimTrailingSlash(entry.GetString("oauth2_rs_origin_landing"))
 	preferShort, preferShortSet := entry.GetBool("oauth2_prefer_short_username")
 	disablePKCE, disablePKCESet := entry.GetBool("oauth2_allow_insecure_client_disable_pkce")
 	jwtLegacy, jwtLegacySet := entry.GetBool("oauth2_jwt_legacy_crypto_enable")
@@ -347,7 +343,6 @@ func (c *Client) GetOAuth2Client(ctx context.Context, name string) (*OAuth2Clien
 		AllowInsecureDisablePKCESet: disablePKCESet,
 		JWTLegacyCryptoEnable:       jwtLegacy,
 		JWTLegacyCryptoEnableSet:    jwtLegacySet,
-		// Note: Client secret is never returned in GET responses
 	}, nil
 }
 

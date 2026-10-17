@@ -2,8 +2,10 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 )
 
 const (
@@ -196,44 +198,55 @@ func (c *Client) DeletePerson(ctx context.Context, id string) error {
 	return nil
 }
 
-// SetPersonPassword sets the password for a person account
+// SetPersonPassword sets the password for a person account.
+// Kanidm has no single call for this: begin a credential update session,
+// submit the password, then commit the session.
 func (c *Client) SetPersonPassword(ctx context.Context, id, password string) error {
-	// Note: This uses the credential update intent API
-	// Implementation will depend on Kanidm's exact credential management flow
-	req := map[string]any{
-		"password": password,
+	resp, err := c.doRequest(ctx, "GET", "/v1/person/"+url.PathEscape(id)+"/_credential/_update", nil)
+	if err != nil {
+		return fmt.Errorf("begin credential update: %w", err)
+	}
+	var begun []json.RawMessage
+	if err := decodeResponse(resp, &begun); err != nil {
+		return fmt.Errorf("begin credential update: %w", err)
+	}
+	if len(begun) == 0 {
+		return fmt.Errorf("begin credential update: empty response")
+	}
+	var session struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(begun[0], &session); err != nil || session.Token == "" {
+		return fmt.Errorf("begin credential update: response did not include a session token")
 	}
 
-	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/v1/person/%s/_credential/_update_intent", id), req)
+	update := []any{
+		map[string]string{"password": password},
+		session,
+	}
+	resp, err = c.doRequest(ctx, "POST", "/v1/credential/_update", update)
 	if err != nil {
 		return fmt.Errorf("set person password: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	return nil
-}
-
-// CreatePersonCredentialResetToken creates a credential reset token for passkey/password setup via UI
-// This enables the modern Kanidm workflow: create person -> generate token -> user sets up credentials
-// The ttl parameter is optional and specifies the token lifetime in seconds
-func (c *Client) CreatePersonCredentialResetToken(ctx context.Context, id string, ttl *int) (string, error) {
-	path := fmt.Sprintf("/v1/person/%s/_credential/_update_intent", id)
-	if ttl != nil {
-		path = fmt.Sprintf("/v1/person/%s/_credential/_update_intent/%d", id, *ttl)
+	var status struct {
+		CanCommit bool              `json:"can_commit"`
+		Warnings  []json.RawMessage `json:"warnings"`
+	}
+	if err := decodeResponse(resp, &status); err != nil {
+		return fmt.Errorf("set person password: %w", err)
+	}
+	if !status.CanCommit {
+		warnings := make([]string, 0, len(status.Warnings))
+		for _, warning := range status.Warnings {
+			warnings = append(warnings, string(warning))
+		}
+		return fmt.Errorf("set person password: credential update cannot be committed (%s). The account policy credential_type_minimum does not allow a password alone; idm_all_persons requires mfa by default", strings.Join(warnings, ", "))
 	}
 
-	resp, err := c.doRequest(ctx, "GET", path, nil)
+	resp, err = c.doRequest(ctx, "POST", "/v1/credential/_commit", session)
 	if err != nil {
-		return "", fmt.Errorf("create credential reset token: %w", err)
+		return fmt.Errorf("commit person password: %w", err)
 	}
-
-	var result struct {
-		Token string `json:"token"`
-	}
-
-	if err := decodeResponse(resp, &result); err != nil {
-		return "", err
-	}
-
-	return result.Token, nil
+	_ = resp.Body.Close()
+	return nil
 }

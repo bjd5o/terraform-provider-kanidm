@@ -18,10 +18,10 @@ import (
 )
 
 var (
-	_ resource.Resource                   = (*serviceAccountResource)(nil)
-	_ resource.ResourceWithImportState    = (*serviceAccountResource)(nil)
-	_ resource.ResourceWithModifyPlan    = (*serviceAccountResource)(nil)
-	_ resource.ResourceWithUpgradeState  = (*serviceAccountResource)(nil)
+	_ resource.Resource                 = (*serviceAccountResource)(nil)
+	_ resource.ResourceWithImportState  = (*serviceAccountResource)(nil)
+	_ resource.ResourceWithModifyPlan   = (*serviceAccountResource)(nil)
+	_ resource.ResourceWithUpgradeState = (*serviceAccountResource)(nil)
 )
 
 func NewServiceAccountResource() resource.Resource {
@@ -33,18 +33,16 @@ type serviceAccountResource struct {
 }
 
 type serviceAccountResourceModel struct {
-	Name             types.String `tfsdk:"name"`
-	ID               types.String `tfsdk:"id"`
-	DisplayName      types.String `tfsdk:"displayname"`
-	Mail             types.List   `tfsdk:"mail"`
-	PosixEnabled     types.Bool   `tfsdk:"posix_enabled"`
-	GIDNumber        types.Int64  `tfsdk:"gidnumber"`
-	Shell            types.String `tfsdk:"shell"`
-	GenerateAPIToken types.Bool   `tfsdk:"generate_api_token"`
-	APIToken         types.String `tfsdk:"api_token"`
-EntryManagedBy types.String `tfsdk:"entry_managed_by"`
-	ValidFrom        types.String `tfsdk:"valid_from"`
-	ExpireAt         types.String `tfsdk:"expire_at"`
+	Name           types.String `tfsdk:"name"`
+	ID             types.String `tfsdk:"id"`
+	DisplayName    types.String `tfsdk:"displayname"`
+	Mail           types.List   `tfsdk:"mail"`
+	PosixEnabled   types.Bool   `tfsdk:"posix_enabled"`
+	GIDNumber      types.Int64  `tfsdk:"gidnumber"`
+	Shell          types.String `tfsdk:"shell"`
+	EntryManagedBy types.String `tfsdk:"entry_managed_by"`
+	ValidFrom      types.String `tfsdk:"valid_from"`
+	ExpireAt       types.String `tfsdk:"expire_at"`
 }
 
 func (r *serviceAccountResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -55,30 +53,19 @@ func (r *serviceAccountResource) Schema(_ context.Context, _ resource.SchemaRequ
 	resp.Schema = schema.Schema{
 		MarkdownDescription: `Manages a Kanidm service account.
 
-Service accounts are used for automated systems and applications to authenticate with Kanidm.
-By default, an API token is automatically generated on creation and can be used for authentication.
+This resource creates and manages the account only. It does not mint, store, or return an API token. Tokens are issued by the OpenBao Kanidm secrets engine.
+
+Set ` + "`entry_managed_by`" + ` to the account or group that should be allowed to mint tokens, for example ` + "`openbao-token-issuers`" + `. Kanidm only lets that entry generate API tokens for the service account.
 
 ## Example Usage
 
 ` + "```hcl" + `
-resource "kanidm_service_account" "terraform" {
-  name        = "terraform-automation"
-  displayname = "Terraform Automation Account"
+resource "kanidm_service_account" "mailer" {
+  name             = "mailer"
+  displayname      = "Mailer"
+  entry_managed_by = "openbao-token-issuers"
 }
-
-# Store the API token in 1Password or another secret manager
-output "terraform_token" {
-  value     = kanidm_service_account.terraform.api_token
-  sensitive = true
-}
-` + "```" + `
-
-**Important:** The API token is only available during creation and cannot be recovered later.
-Store it securely immediately after creation.
-
-Set ` + "`generate_api_token = false`" + ` to skip token generation. This is useful when the
-API user lacks permission to generate tokens (in Kanidm, only the ` + "`entry_managed_by`" + `
-entity can generate API tokens for a service account).`,
+` + "```" + ``,
 
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
@@ -103,9 +90,9 @@ entity can generate API tokens for a service account).`,
 			},
 			"posix_enabled": schema.BoolAttribute{
 				MarkdownDescription: "Whether POSIX support is enabled for the service account. Enabling without a gidnumber lets Kanidm generate one automatically. Disabling after enablement is not currently supported.",
-				Optional: true,
-				Computed: true,
-				Default:  booldefault.StaticBool(false),
+				Optional:            true,
+				Computed:            true,
+				Default:             booldefault.StaticBool(false),
 			},
 			"gidnumber": schema.Int64Attribute{
 				MarkdownDescription: "Optional POSIX gidnumber for the service account. Computed after POSIX is enabled, even when Kanidm generates the value.",
@@ -120,27 +107,10 @@ entity can generate API tokens for a service account).`,
 				Optional:            true,
 				Computed:            true,
 			},
-			"generate_api_token": schema.BoolAttribute{
-				MarkdownDescription: "Whether to generate an API token on creation. Set to `false` if the API user " +
-					"lacks permission to generate tokens. In Kanidm, only the `entry_managed_by` entity can generate " +
-					"API tokens for a service account. Defaults to `true`.",
-				Optional: true,
-				Computed: true,
-				Default:  booldefault.StaticBool(true),
-			},
-			"api_token": schema.StringAttribute{
-				MarkdownDescription: "API token for the service account. **Only available during creation.** " +
-					"Store this token securely as it cannot be retrieved later.",
-				Computed:  true,
-				Sensitive: true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
 			"entry_managed_by": schema.StringAttribute{
-				MarkdownDescription: "Account or group ID that can manage this service account. " +
-					"This allows delegated administration, including API token generation. " +
-					"**Required by Kanidm.** Use a fully-qualified name (e.g., `terraform-admin@idm.s8i.ca`) or UUID.",
+				MarkdownDescription: "Account or group that can manage this service account, including minting API tokens. " +
+					"**Required by Kanidm.** Set this to the OpenBao token issuer (for example `openbao-token-issuers`) " +
+					"so the secrets engine can mint tokens. Use a fully-qualified name or UUID.",
 				Required: true,
 			},
 			"valid_from": schema.StringAttribute{
@@ -152,7 +122,7 @@ entity can generate API tokens for a service account).`,
 				Optional:            true,
 			},
 		},
-		Version: 1,
+		Version: 2,
 	}
 }
 
@@ -442,9 +412,7 @@ func (r *serviceAccountResource) Create(ctx context.Context, req resource.Create
 	}
 	entryManagedBy = []string{spn}
 
-	// Create the service account (optionally generating an API token)
-	generateToken := !plan.GenerateAPIToken.IsNull() && !plan.GenerateAPIToken.IsUnknown() && plan.GenerateAPIToken.ValueBool()
-	sa, err := r.client.CreateServiceAccount(ctx, plan.Name.ValueString(), plan.DisplayName.ValueString(), entryManagedBy, generateToken)
+	sa, err := r.client.CreateServiceAccount(ctx, plan.Name.ValueString(), plan.DisplayName.ValueString(), entryManagedBy)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Creating Service Account",
@@ -453,11 +421,6 @@ func (r *serviceAccountResource) Create(ctx context.Context, req resource.Create
 		return
 	}
 
-	if generateToken {
-		plan.APIToken = types.StringValue(sa.APIToken)
-	} else {
-		plan.APIToken = types.StringNull()
-	}
 	if !plan.ValidFrom.IsNull() && !plan.ValidFrom.IsUnknown() {
 		if err := r.client.SetServiceAccountValidFrom(ctx, sa.Name, plan.ValidFrom.ValueString()); err != nil {
 			resp.Diagnostics.AddError("Error Updating Valid From", "Service account was created but valid_from could not be set: "+err.Error())
@@ -550,8 +513,6 @@ func (r *serviceAccountResource) Read(ctx context.Context, req resource.ReadRequ
 		)
 		return
 	}
-
-	// API token is write-only and cannot be read back, preserve existing state value
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -740,9 +701,6 @@ func (r *serviceAccountResource) Update(ctx context.Context, req resource.Update
 		return
 	}
 
-	// Preserve API token (cannot be updated)
-	plan.APIToken = state.APIToken
-
 	tflog.Debug(ctx, "Service account updated successfully", map[string]any{
 		"id": plan.ID.ValueString(),
 	})
@@ -788,12 +746,6 @@ func (r *serviceAccountResource) ImportState(ctx context.Context, req resource.I
 	tflog.Debug(ctx, "Imported service account", map[string]any{
 		"id": req.ID,
 	})
-
-	resp.Diagnostics.AddWarning(
-		"API Token Not Available",
-		"The API token for this service account is not available after import. "+
-			"If you need the token, you must regenerate it manually using the Kanidm CLI or web interface.",
-	)
 }
 
 func (r *serviceAccountResource) UpgradeState(ctx context.Context) map[int64]resource.StateUpgrader {
@@ -847,22 +799,70 @@ func (r *serviceAccountResource) UpgradeState(ctx context.Context) map[int64]res
 					embyString = types.StringValue(embyValues[0])
 				}
 
-				upgradedState := serviceAccountResourceModel{
-					Name:             priorState.Name,
-					ID:               priorState.ID,
-					DisplayName:      priorState.DisplayName,
-					Mail:             priorState.Mail,
-					PosixEnabled:     priorState.PosixEnabled,
-					GIDNumber:        priorState.GIDNumber,
-					Shell:            priorState.Shell,
-					GenerateAPIToken: priorState.GenerateAPIToken,
-					APIToken:         priorState.APIToken,
-					EntryManagedBy:   embyString,
-					ValidFrom:        priorState.ValidFrom,
-					ExpireAt:         priorState.ExpireAt,
+				resp.Diagnostics.Append(resp.State.Set(ctx, &serviceAccountResourceModel{
+					Name:           priorState.Name,
+					ID:             priorState.ID,
+					DisplayName:    priorState.DisplayName,
+					Mail:           priorState.Mail,
+					PosixEnabled:   priorState.PosixEnabled,
+					GIDNumber:      priorState.GIDNumber,
+					Shell:          priorState.Shell,
+					EntryManagedBy: embyString,
+					ValidFrom:      priorState.ValidFrom,
+					ExpireAt:       priorState.ExpireAt,
+				})...)
+			},
+		},
+		1: {
+			PriorSchema: &schema.Schema{
+				Attributes: map[string]schema.Attribute{
+					"name":               schema.StringAttribute{Required: true},
+					"id":                 schema.StringAttribute{Computed: true},
+					"displayname":        schema.StringAttribute{Required: true},
+					"mail":               schema.ListAttribute{Optional: true, ElementType: types.StringType},
+					"posix_enabled":      schema.BoolAttribute{Optional: true, Computed: true},
+					"gidnumber":          schema.Int64Attribute{Optional: true, Computed: true},
+					"shell":              schema.StringAttribute{Optional: true, Computed: true},
+					"generate_api_token": schema.BoolAttribute{Optional: true, Computed: true},
+					"api_token":          schema.StringAttribute{Computed: true, Sensitive: true},
+					"entry_managed_by":   schema.StringAttribute{Required: true},
+					"valid_from":         schema.StringAttribute{Optional: true},
+					"expire_at":          schema.StringAttribute{Optional: true},
+				},
+			},
+			StateUpgrader: func(ctx context.Context, req resource.UpgradeStateRequest, resp *resource.UpgradeStateResponse) {
+				var priorState struct {
+					Name             types.String `tfsdk:"name"`
+					ID               types.String `tfsdk:"id"`
+					DisplayName      types.String `tfsdk:"displayname"`
+					Mail             types.List   `tfsdk:"mail"`
+					PosixEnabled     types.Bool   `tfsdk:"posix_enabled"`
+					GIDNumber        types.Int64  `tfsdk:"gidnumber"`
+					Shell            types.String `tfsdk:"shell"`
+					GenerateAPIToken types.Bool   `tfsdk:"generate_api_token"`
+					APIToken         types.String `tfsdk:"api_token"`
+					EntryManagedBy   types.String `tfsdk:"entry_managed_by"`
+					ValidFrom        types.String `tfsdk:"valid_from"`
+					ExpireAt         types.String `tfsdk:"expire_at"`
 				}
 
-				resp.Diagnostics.Append(resp.State.Set(ctx, &upgradedState)...)
+				resp.Diagnostics.Append(req.State.Get(ctx, &priorState)...)
+				if resp.Diagnostics.HasError() {
+					return
+				}
+
+				resp.Diagnostics.Append(resp.State.Set(ctx, &serviceAccountResourceModel{
+					Name:           priorState.Name,
+					ID:             priorState.ID,
+					DisplayName:    priorState.DisplayName,
+					Mail:           priorState.Mail,
+					PosixEnabled:   priorState.PosixEnabled,
+					GIDNumber:      priorState.GIDNumber,
+					Shell:          priorState.Shell,
+					EntryManagedBy: priorState.EntryManagedBy,
+					ValidFrom:      priorState.ValidFrom,
+					ExpireAt:       priorState.ExpireAt,
+				})...)
 			},
 		},
 	}

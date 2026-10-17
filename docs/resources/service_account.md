@@ -4,104 +4,66 @@ page_title: "kanidm_service_account Resource - kanidm"
 subcategory: "Identity"
 description: |-
   Manages a Kanidm service account.
-  Service accounts are used for automated systems and applications to authenticate with Kanidm.
-  By default, an API token is automatically generated on creation and can be used for authentication.
-  Set `generate_api_token = false` to skip token generation if the API user lacks permission.
+  This resource creates and manages the account only. It does not mint, store, or return an API token. Tokens are issued by the OpenBao Kanidm secrets engine.
+  Set entry_managed_by to the account or group that should be allowed to mint tokens, for example openbao-token-issuers. Kanidm only lets that entry generate API tokens for the service account.
   Example Usage
   
-  resource "kanidm_service_account" "terraform" {
-    name        = "terraform-automation"
-    displayname = "Terraform Automation Account"
+  resource "kanidm_service_account" "mailer" {
+    name             = "mailer"
+    displayname      = "Mailer"
+    entry_managed_by = "openbao-token-issuers"
   }
-  
-  # Store the API token in 1Password or another secret manager
-  output "terraform_token" {
-    value     = kanidm_service_account.terraform.api_token
-    sensitive = true
-  }
-
-  # Skip token generation when the API user lacks permission
-  resource "kanidm_service_account" "mail-sender" {
-    name               = "kanidm-mail-sender"
-    displayname        = "Kanidm Mail Sender"
-    generate_api_token = false
-  }
-  
-  Important: The API token is only available during creation and cannot be recovered later.
-  Store it securely immediately after creation.
 ---
 
 # kanidm_service_account (Resource)
 
 Manages a Kanidm service account.
 
-Service accounts are used for automated systems and applications to authenticate with Kanidm.
-By default, an API token is automatically generated on creation and can be used for authentication.
+This resource creates and manages the account only. It does not mint, store, or return an API token. Tokens are issued by the OpenBao Kanidm secrets engine.
+
+Set `entry_managed_by` to the account or group that should be allowed to mint tokens, for example `openbao-token-issuers`. Kanidm only lets that entry generate API tokens for the service account.
 
 ## Example Usage
 
 ```hcl
-resource "kanidm_service_account" "terraform" {
-  name        = "terraform-automation"
-  displayname = "Terraform Automation Account"
-}
-
-# Store the API token in 1Password or another secret manager
-output "terraform_token" {
-  value     = kanidm_service_account.terraform.api_token
-  sensitive = true
+resource "kanidm_service_account" "mailer" {
+  name             = "mailer"
+  displayname      = "Mailer"
+  entry_managed_by = "openbao-token-issuers"
 }
 ```
-
-## Skipping Token Generation
-
-In Kanidm's RBAC model, only the `entry_managed_by` entity can generate API tokens for a
-service account. If your API user lacks this permission, set `generate_api_token = false`:
-
-```hcl
-resource "kanidm_service_account" "mail-sender" {
-  name               = "kanidm-mail-sender"
-  displayname        = "Kanidm Mail Sender"
-  generate_api_token = false
-}
-```
-
-**Important:** The API token is only available during creation and cannot be recovered later.
-Store it securely immediately after creation.
 
 ## Example Usage
 
 ```terraform
-# Example: Service account for automation
-resource "kanidm_service_account" "terraform" {
-  name        = "terraform-automation"
-  displayname = "Terraform Automation Account"
+# Example: Service account whose tokens are minted by the OpenBao Kanidm secrets engine.
+# entry_managed_by is the only entry Kanidm allows to generate API tokens for this account.
+resource "kanidm_service_account" "mailer" {
+  name             = "mailer"
+  displayname      = "Mailer"
+  entry_managed_by = "openbao-token-issuers"
 }
 
-# Store the API token securely in 1Password
-output "terraform_api_token" {
-  description = "API token for Terraform service account"
-  value       = kanidm_service_account.terraform.api_token
-  sensitive   = true
-}
-
-# Example: Service account for CI/CD
+# Example: Service account for CI
 resource "kanidm_service_account" "argocd" {
-  name        = "argocd"
-  displayname = "ArgoCD Service Account"
+  name             = "argocd"
+  displayname      = "ArgoCD Service Account"
+  entry_managed_by = "openbao-token-issuers"
 }
 
 # Example: Service account for monitoring
 resource "kanidm_service_account" "prometheus" {
-  name        = "prometheus"
-  displayname = "Prometheus Monitoring"
+  name             = "prometheus"
+  displayname      = "Prometheus Monitoring"
+  entry_managed_by = "openbao-token-issuers"
 }
 
 # Example: Imported existing service account
 # Import command: terraform import kanidm_service_account.existing existing_account_id
 resource "kanidm_service_account" "existing" {
-  name        = "existing-service"
-  displayname = "Existing Service Account"
+  name             = "existing-service"
+  displayname      = "Existing Service Account"
+  entry_managed_by = "openbao-token-issuers"
 }
 ```
 
@@ -111,13 +73,12 @@ resource "kanidm_service_account" "existing" {
 ### Required
 
 - `displayname` (String) Display name for the service account. This is shown in the Kanidm UI and logs.
-- `entry_managed_by` (String) Account or group ID that can manage this service account. This allows delegated administration, including API token generation. **Required by Kanidm.** Use a fully-qualified name (e.g., `terraform-admin@idm.s8i.ca`) or UUID.
+- `entry_managed_by` (String) Account or group that can manage this service account, including minting API tokens. **Required by Kanidm.** Set this to the OpenBao token issuer (for example `openbao-token-issuers`) so the secrets engine can mint tokens. Use a fully-qualified name or UUID.
 - `name` (String) Service account name. This can be changed outside Terraform, but is tracked via the stable UUID in `id`.
 
 ### Optional
 
 - `expire_at` (String) RFC3339 time when the service account expires. Use `null` to leave unset.
-- `generate_api_token` (Boolean) Whether to generate an API token on creation. Set to `false` if the API user lacks permission to generate tokens. In Kanidm, only the `entry_managed_by` entity can generate API tokens for a service account. Defaults to `true`.
 - `gidnumber` (Number) Optional POSIX gidnumber for the service account. Computed after POSIX is enabled, even when Kanidm generates the value.
 - `mail` (List of String) Email addresses for the service account.
 - `posix_enabled` (Boolean) Whether POSIX support is enabled for the service account. Enabling without a gidnumber lets Kanidm generate one automatically. Disabling after enablement is not currently supported.
@@ -126,5 +87,4 @@ resource "kanidm_service_account" "existing" {
 
 ### Read-Only
 
-- `api_token` (String, Sensitive) API token for the service account. Only populated when `generate_api_token` is `true`. **Only available during creation.** Store this token securely as it cannot be retrieved later.
 - `id` (String) Stable Kanidm UUID for this service account. This value is computed after creation/import and used to keep the resource linked across external renames.

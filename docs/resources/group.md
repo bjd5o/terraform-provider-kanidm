@@ -61,7 +61,7 @@ resource "kanidm_group" "admins" {
   description = "Infrastructure administrators with full access"
 
   members = [
-    kanidm_person.alice_password.id,
+    kanidm_person.alice.id,
     kanidm_person.charlie.id,
   ]
 }
@@ -100,10 +100,10 @@ resource "kanidm_group" "existing_group" {
 ### Optional
 
 - `description` (String) Description of the group.
-- `entry_managed_by` (Set of String) Set of account or group IDs that can manage this group.
+- `entry_managed_by` (String) Account or group ID that can manage this group. Use UUIDs or fully-qualified names.
 - `gidnumber` (Number) Optional POSIX gidnumber for the group. Computed after POSIX is enabled, even when Kanidm generates the value.
 - `mail` (List of String) Email addresses for the group.
-- `members` (Set of String) Set of member IDs (persons, service accounts, or groups). Members are managed as a complete set - any changes will replace all members.
+- `members` (Set of String) Set of member IDs (persons, service accounts, or groups). Members are managed as a complete set - any changes will replace all members. Use UUIDs or fully-qualified names (e.g., `user@domain.com`).
 - `posix_enabled` (Boolean) Whether POSIX support is enabled for the group. Enabling without a gidnumber lets Kanidm generate one automatically. Disabling after enablement is not currently supported.
 
 ### Read-Only

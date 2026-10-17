@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -19,9 +18,10 @@ import (
 
 // Ensure the implementation satisfies the required interfaces
 var (
-	_ resource.Resource                = (*personResource)(nil)
-	_ resource.ResourceWithImportState = (*personResource)(nil)
-	_ resource.ResourceWithModifyPlan  = (*personResource)(nil)
+	_ resource.Resource                 = (*personResource)(nil)
+	_ resource.ResourceWithImportState  = (*personResource)(nil)
+	_ resource.ResourceWithModifyPlan   = (*personResource)(nil)
+	_ resource.ResourceWithUpgradeState = (*personResource)(nil)
 )
 
 // NewPersonResource creates a new person resource
@@ -37,23 +37,21 @@ type personResource struct {
 
 // personResourceModel describes the resource data model
 type personResourceModel struct {
-	Name                                types.String `tfsdk:"name"`
-	ID                                  types.String `tfsdk:"id"`
-	DisplayName                         types.String `tfsdk:"displayname"`
-	LegalName                           types.String `tfsdk:"legalname"`
-	PosixEnabled                        types.Bool   `tfsdk:"posix_enabled"`
-	GIDNumber                           types.Int64  `tfsdk:"gidnumber"`
-	Shell                               types.String `tfsdk:"shell"`
-	ValidFrom                           types.String `tfsdk:"valid_from"`
-	ExpireAt                            types.String `tfsdk:"expire_at"`
-	NameManagement                      types.String `tfsdk:"name_management"`
-	DisplayManagement                   types.String `tfsdk:"display_management"`
-	LegalNameManagement                 types.String `tfsdk:"legalname_management"`
-	Mail                                types.List   `tfsdk:"mail"`
-	Password                            types.String `tfsdk:"password"`
-	GenerateInitialCredentialResetToken types.Bool   `tfsdk:"generate_initial_credential_reset_token"`
-	InitialCredentialResetToken         types.String `tfsdk:"initial_credential_reset_token"`
-	InitialCredentialResetTokenTTL      types.Int64  `tfsdk:"initial_credential_reset_token_ttl"`
+	Name                types.String `tfsdk:"name"`
+	ID                  types.String `tfsdk:"id"`
+	DisplayName         types.String `tfsdk:"displayname"`
+	LegalName           types.String `tfsdk:"legalname"`
+	PosixEnabled        types.Bool   `tfsdk:"posix_enabled"`
+	GIDNumber           types.Int64  `tfsdk:"gidnumber"`
+	Shell               types.String `tfsdk:"shell"`
+	ValidFrom           types.String `tfsdk:"valid_from"`
+	ExpireAt            types.String `tfsdk:"expire_at"`
+	NameManagement      types.String `tfsdk:"name_management"`
+	DisplayManagement   types.String `tfsdk:"display_management"`
+	LegalNameManagement types.String `tfsdk:"legalname_management"`
+	Mail                types.List   `tfsdk:"mail"`
+	PasswordWO          types.String `tfsdk:"password_wo"`
+	PasswordWOVersion   types.Int64  `tfsdk:"password_wo_version"`
 }
 
 // Metadata returns the resource type name
@@ -66,38 +64,22 @@ func (r *personResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 	resp.Schema = schema.Schema{
 		MarkdownDescription: `Manages a Kanidm person account.
 
-## Authentication Setup
+Requires OpenTofu or Terraform 1.11 or later, because ` + "`password_wo`" + ` is write-only.
 
-Kanidm supports two credential setup workflows:
+## Password
 
-### Password-Based Authentication
-Set the ` + "`password`" + ` attribute to create a password-based account:
+` + "`password_wo`" + ` is sent to Kanidm and is never stored in the plan or state. Set ` + "`password_wo_version`" + ` to a number and increase it when the password should change. Changing ` + "`password_wo`" + ` alone does not produce a plan diff, because OpenTofu cannot see a write-only value.
 
 ` + "```hcl" + `
-resource "kanidm_person" "example" {
-  name        = "jdoe"
-  displayname = "John Doe"
-  password    = var.initial_password
+resource "kanidm_person" "alice" {
+  name                = "alice"
+  displayname         = "Alice"
+  password_wo         = ephemeral.vault_generic_secret.alice.data.password
+  password_wo_version = 1
 }
 ` + "```" + `
 
-### Passkey/Modern Authentication (Recommended)
-Set ` + "`generate_initial_credential_reset_token = true`" + ` to generate a one-time onboarding token for credential setup via the Kanidm web UI:
-
-` + "```hcl" + `
-resource "kanidm_person" "example" {
-  name                          = "jdoe"
-  displayname                   = "John Doe"
-  generate_initial_credential_reset_token = true
-}
-
-output "initial_credential_reset_token" {
-  value     = kanidm_person.example.initial_credential_reset_token
-  sensitive = true
-}
-` + "```" + `
-
-The user can then visit the Kanidm web UI with the token to set up passkeys or passwords.`,
+Credential reset tokens are minted outside OpenTofu, for example by the mailer. This resource does not generate them.`,
 
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
@@ -164,36 +146,19 @@ The user can then visit the Kanidm web UI with the token to set up passkeys or p
 				Optional:            true,
 				ElementType:         types.StringType,
 			},
-			"password": schema.StringAttribute{
-				MarkdownDescription: "Password for the person account. **Note:** This is write-only and will not be stored in state. " +
-					"Mutually exclusive with `generate_initial_credential_reset_token`. " +
-					"Consider using `lifecycle { ignore_changes = [password] }` if the password is managed externally.",
+			"password_wo": schema.StringAttribute{
+				MarkdownDescription: "Password sent to Kanidm when the person is created, and again on update when `password_wo_version` changes. " +
+					"Write-only: OpenTofu does not store it in the plan or state. Requires OpenTofu or Terraform 1.11 or later.",
 				Optional:  true,
 				Sensitive: true,
+				WriteOnly: true,
 			},
-			"generate_initial_credential_reset_token": schema.BoolAttribute{
-				MarkdownDescription: "Whether to generate a one-time initial credential reset token for onboarding via the web UI. " +
-					"Mutually exclusive with `password`. Defaults to `false`.",
-				Optional: true,
-				Computed: true,
-				Default:  booldefault.StaticBool(false),
-			},
-			"initial_credential_reset_token": schema.StringAttribute{
-				MarkdownDescription: "The initial credential reset token generated during resource creation when `generate_initial_credential_reset_token` is `true`. " +
-					"This token can be used once to set up credentials via the Kanidm web UI. **Computed value only.**",
-				Computed:  true,
-				Sensitive: true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"initial_credential_reset_token_ttl": schema.Int64Attribute{
-				MarkdownDescription: "Time-to-live for the initial credential reset token in seconds. Defaults to 3600 (1 hour). Only used during resource creation.",
+			"password_wo_version": schema.Int64Attribute{
+				MarkdownDescription: "Version of `password_wo`. Only this number is stored. Increase it to apply a new password. Changing `password_wo` alone does nothing.",
 				Optional:            true,
-				Computed:            true,
-				Default:             int64default.StaticInt64(3600),
 			},
 		},
+		Version: 1,
 	}
 }
 
@@ -355,40 +320,14 @@ func (r *personResource) ModifyPlan(ctx context.Context, req resource.ModifyPlan
 			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("shell"), types.StringNull())...)
 		}
 	}
-
-	if !state.GenerateInitialCredentialResetToken.IsNull() && !state.GenerateInitialCredentialResetToken.IsUnknown() {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("generate_initial_credential_reset_token"), state.GenerateInitialCredentialResetToken)...)
-	}
-
-	if !state.InitialCredentialResetTokenTTL.IsNull() && !state.InitialCredentialResetTokenTTL.IsUnknown() {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("initial_credential_reset_token_ttl"), state.InitialCredentialResetTokenTTL)...)
-	}
 }
 
 // Create creates the resource and sets the initial Terraform state
 func (r *personResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan personResourceModel
+	var config, plan personResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	// Validate mutually exclusive options
-	hasPassword := !plan.Password.IsNull() && !plan.Password.IsUnknown()
-	generateToken := r.personDefaults.GenerateInitialResetToken
-	if !plan.GenerateInitialCredentialResetToken.IsNull() && !plan.GenerateInitialCredentialResetToken.IsUnknown() {
-		generateToken = plan.GenerateInitialCredentialResetToken.ValueBool()
-	}
-	tokenTTL := r.personDefaults.InitialResetTokenTTLSeconds
-	if !plan.InitialCredentialResetTokenTTL.IsNull() && !plan.InitialCredentialResetTokenTTL.IsUnknown() {
-		tokenTTL = plan.InitialCredentialResetTokenTTL.ValueInt64()
-	}
-
-	if hasPassword && generateToken {
-		resp.Diagnostics.AddError(
-			"Conflicting Configuration",
-			"Cannot specify both 'password' and 'generate_initial_credential_reset_token'. Choose one authentication setup method.",
-		)
 		return
 	}
 
@@ -431,31 +370,15 @@ func (r *personResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	// Set password if provided
-	if hasPassword {
+	if password, ok := configuredPassword(config); ok {
 		tflog.Debug(ctx, "Setting initial password for person")
-		if err := r.client.SetPersonPassword(ctx, person.Name, plan.Password.ValueString()); err != nil {
+		if err := r.client.SetPersonPassword(ctx, person.Name, password); err != nil {
 			resp.Diagnostics.AddError(
 				"Error Setting Password",
 				"Person was created but password could not be set: "+err.Error(),
 			)
 			return
 		}
-	}
-
-	// Generate credential reset token if requested
-	if generateToken {
-		tflog.Debug(ctx, "Generating credential reset token for person")
-		ttl := int(tokenTTL)
-		token, err := r.client.CreatePersonCredentialResetToken(ctx, person.Name, &ttl)
-		if err != nil {
-			resp.Diagnostics.AddError(
-				"Error Generating Credential Reset Token",
-				"Person was created but credential reset token could not be generated: "+err.Error(),
-			)
-			return
-		}
-		plan.InitialCredentialResetToken = types.StringValue(token)
 	}
 
 	// Update mail if provided
@@ -549,20 +472,6 @@ func (r *personResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	// Password is write-only, keep the planned value but don't try to read it back
-
-	// Ensure initial credential reset token fields are properly set with defaults if not already set.
-	if plan.GenerateInitialCredentialResetToken.IsNull() || plan.GenerateInitialCredentialResetToken.IsUnknown() {
-		plan.GenerateInitialCredentialResetToken = types.BoolValue(generateToken)
-	}
-	if plan.InitialCredentialResetTokenTTL.IsNull() || plan.InitialCredentialResetTokenTTL.IsUnknown() {
-		plan.InitialCredentialResetTokenTTL = types.Int64Value(tokenTTL)
-	}
-	// If the initial token wasn't generated, ensure it's null not unknown.
-	if plan.InitialCredentialResetToken.IsUnknown() {
-		plan.InitialCredentialResetToken = types.StringNull()
-	}
-
 	tflog.Debug(ctx, "Person created successfully", map[string]any{
 		"id": plan.ID.ValueString(),
 	})
@@ -614,19 +523,6 @@ func (r *personResource) Read(ctx context.Context, req resource.ReadRequest, res
 			"Could not map person data into Terraform state: "+err.Error(),
 		)
 		return
-	}
-
-	// Password is write-only and not readable from API, preserve existing state value
-	// Initial credential reset token fields should use defaults when not explicitly set.
-	if state.GenerateInitialCredentialResetToken.IsNull() || state.GenerateInitialCredentialResetToken.IsUnknown() {
-		state.GenerateInitialCredentialResetToken = types.BoolValue(r.personDefaults.GenerateInitialResetToken)
-	}
-	if state.InitialCredentialResetTokenTTL.IsNull() || state.InitialCredentialResetTokenTTL.IsUnknown() {
-		state.InitialCredentialResetTokenTTL = types.Int64Value(r.personDefaults.InitialResetTokenTTLSeconds)
-	}
-	// The initial reset token is only set during Create when generated, otherwise null.
-	if state.InitialCredentialResetToken.IsUnknown() {
-		state.InitialCredentialResetToken = types.StringNull()
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -775,15 +671,22 @@ func (r *personResource) Update(ctx context.Context, req resource.UpdateRequest,
 		}
 	}
 
-	// Update password if changed
-	if !plan.Password.Equal(state.Password) && !plan.Password.IsNull() {
-		tflog.Debug(ctx, "Updating password for person")
-		if err := r.client.SetPersonPassword(ctx, state.ID.ValueString(), plan.Password.ValueString()); err != nil {
-			resp.Diagnostics.AddError(
-				"Error Updating Password",
-				"Person was updated but password could not be changed: "+err.Error(),
-			)
+	// password_wo is write-only, so a change to it alone is invisible. Apply it only when the stored version changes.
+	if !plan.PasswordWOVersion.Equal(state.PasswordWOVersion) {
+		var config personResourceModel
+		resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+		if resp.Diagnostics.HasError() {
 			return
+		}
+		if password, ok := configuredPassword(config); ok {
+			tflog.Debug(ctx, "Updating password for person")
+			if err := r.client.SetPersonPassword(ctx, state.ID.ValueString(), password); err != nil {
+				resp.Diagnostics.AddError(
+					"Error Updating Password",
+					"Person was updated but password could not be changed: "+err.Error(),
+				)
+				return
+			}
 		}
 	}
 
@@ -811,18 +714,6 @@ func (r *personResource) Update(ctx context.Context, req resource.UpdateRequest,
 			"Person was updated but could not be mapped back to Terraform state: "+err.Error(),
 		)
 		return
-	}
-
-	// Ensure initial credential reset token fields are properly set.
-	if plan.GenerateInitialCredentialResetToken.IsNull() || plan.GenerateInitialCredentialResetToken.IsUnknown() {
-		plan.GenerateInitialCredentialResetToken = state.GenerateInitialCredentialResetToken
-	}
-	if plan.InitialCredentialResetTokenTTL.IsNull() || plan.InitialCredentialResetTokenTTL.IsUnknown() {
-		plan.InitialCredentialResetTokenTTL = state.InitialCredentialResetTokenTTL
-	}
-	plan.InitialCredentialResetToken = state.InitialCredentialResetToken
-	if plan.InitialCredentialResetToken.IsUnknown() {
-		plan.InitialCredentialResetToken = types.StringNull()
 	}
 
 	tflog.Debug(ctx, "Person updated successfully", map[string]any{
@@ -874,4 +765,81 @@ func (r *personResource) ImportState(ctx context.Context, req resource.ImportSta
 	tflog.Debug(ctx, "Imported person", map[string]any{
 		"id": req.ID,
 	})
+}
+
+func configuredPassword(config personResourceModel) (string, bool) {
+	if config.PasswordWO.IsNull() || config.PasswordWO.IsUnknown() {
+		return "", false
+	}
+	return config.PasswordWO.ValueString(), true
+}
+
+func (r *personResource) UpgradeState(ctx context.Context) map[int64]resource.StateUpgrader {
+	return map[int64]resource.StateUpgrader{
+		0: {
+			PriorSchema: &schema.Schema{
+				Attributes: map[string]schema.Attribute{
+					"name":                 schema.StringAttribute{Required: true},
+					"id":                   schema.StringAttribute{Computed: true},
+					"displayname":          schema.StringAttribute{Required: true},
+					"legalname":            schema.StringAttribute{Optional: true},
+					"posix_enabled":        schema.BoolAttribute{Optional: true, Computed: true},
+					"gidnumber":            schema.Int64Attribute{Optional: true, Computed: true},
+					"shell":                schema.StringAttribute{Optional: true, Computed: true},
+					"valid_from":           schema.StringAttribute{Optional: true, Computed: true},
+					"expire_at":            schema.StringAttribute{Optional: true},
+					"name_management":      schema.StringAttribute{Optional: true},
+					"display_management":   schema.StringAttribute{Optional: true},
+					"legalname_management": schema.StringAttribute{Optional: true},
+					"mail":                 schema.ListAttribute{Optional: true, ElementType: types.StringType},
+					"password":             schema.StringAttribute{Optional: true, Sensitive: true},
+					"generate_initial_credential_reset_token": schema.BoolAttribute{Optional: true, Computed: true},
+					"initial_credential_reset_token":          schema.StringAttribute{Computed: true, Sensitive: true},
+					"initial_credential_reset_token_ttl":      schema.Int64Attribute{Optional: true, Computed: true},
+				},
+			},
+			StateUpgrader: func(ctx context.Context, req resource.UpgradeStateRequest, resp *resource.UpgradeStateResponse) {
+				var priorState struct {
+					Name                                types.String `tfsdk:"name"`
+					ID                                  types.String `tfsdk:"id"`
+					DisplayName                         types.String `tfsdk:"displayname"`
+					LegalName                           types.String `tfsdk:"legalname"`
+					PosixEnabled                        types.Bool   `tfsdk:"posix_enabled"`
+					GIDNumber                           types.Int64  `tfsdk:"gidnumber"`
+					Shell                               types.String `tfsdk:"shell"`
+					ValidFrom                           types.String `tfsdk:"valid_from"`
+					ExpireAt                            types.String `tfsdk:"expire_at"`
+					NameManagement                      types.String `tfsdk:"name_management"`
+					DisplayManagement                   types.String `tfsdk:"display_management"`
+					LegalNameManagement                 types.String `tfsdk:"legalname_management"`
+					Mail                                types.List   `tfsdk:"mail"`
+					Password                            types.String `tfsdk:"password"`
+					GenerateInitialCredentialResetToken types.Bool   `tfsdk:"generate_initial_credential_reset_token"`
+					InitialCredentialResetToken         types.String `tfsdk:"initial_credential_reset_token"`
+					InitialCredentialResetTokenTTL      types.Int64  `tfsdk:"initial_credential_reset_token_ttl"`
+				}
+
+				resp.Diagnostics.Append(req.State.Get(ctx, &priorState)...)
+				if resp.Diagnostics.HasError() {
+					return
+				}
+
+				resp.Diagnostics.Append(resp.State.Set(ctx, &personResourceModel{
+					Name:                priorState.Name,
+					ID:                  priorState.ID,
+					DisplayName:         priorState.DisplayName,
+					LegalName:           priorState.LegalName,
+					PosixEnabled:        priorState.PosixEnabled,
+					GIDNumber:           priorState.GIDNumber,
+					Shell:               priorState.Shell,
+					ValidFrom:           priorState.ValidFrom,
+					ExpireAt:            priorState.ExpireAt,
+					NameManagement:      priorState.NameManagement,
+					DisplayManagement:   priorState.DisplayManagement,
+					LegalNameManagement: priorState.LegalNameManagement,
+					Mail:                priorState.Mail,
+				})...)
+			},
+		},
+	}
 }

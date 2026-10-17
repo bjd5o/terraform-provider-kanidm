@@ -2,11 +2,8 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/url"
-	"strings"
 )
 
 const (
@@ -20,17 +17,14 @@ type ServiceAccount struct {
 	Name           string
 	SPN            string
 	DisplayName    string
-	APIToken       string   // Only populated on creation
 	EntryManagedBy []string // Account/group IDs that can manage this entry
 	Mail           []string
 	ValidFrom      string
 	ExpireAt       string
 }
 
-// CreateServiceAccount creates a new service account. If generateToken is true, an API token
-// is automatically generated. Set generateToken to false if the calling user lacks permission
-// to generate tokens (e.g. not the entry_managed_by entity).
-func (c *Client) CreateServiceAccount(ctx context.Context, name, displayName string, entryManagedBy []string, generateToken bool) (*ServiceAccount, error) {
+// CreateServiceAccount creates a new service account. It does not mint an API token.
+func (c *Client) CreateServiceAccount(ctx context.Context, name, displayName string, entryManagedBy []string) (*ServiceAccount, error) {
 	attrs := map[string]any{
 		"name": []string{name},
 	}
@@ -51,21 +45,11 @@ func (c *Client) CreateServiceAccount(ctx context.Context, name, displayName str
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	sa := &ServiceAccount{
+	return &ServiceAccount{
 		Name:           name,
 		DisplayName:    displayName,
 		EntryManagedBy: entryManagedBy,
-	}
-
-	if generateToken {
-		token, err := c.GenerateServiceAccountToken(ctx, name, "terraform-managed", nil)
-		if err != nil {
-			return nil, fmt.Errorf("generate initial token: %w", err)
-		}
-		sa.APIToken = token
-	}
-
-	return sa, nil
+	}, nil
 }
 
 // GetServiceAccount retrieves a service account by ID
@@ -134,50 +118,25 @@ func (c *Client) DeleteServiceAccount(ctx context.Context, id string) error {
 	return nil
 }
 
-// GenerateServiceAccountToken generates a new API token for the service account
-func (c *Client) GenerateServiceAccountToken(ctx context.Context, id, label string, expiry *int64) (string, error) {
-	req := map[string]any{
-		"label":      label,
-		"expiry":     nil,
-		"read_write": true,
-	}
+// APIToken is an API token issued for a service account. The secret itself is not returned by list.
+type APIToken struct {
+	TokenID string `json:"token_id"`
+	Label   string `json:"label"`
+}
 
-	if expiry != nil {
-		req["expiry"] = *expiry
-	}
-
-	resp, err := c.doRequest(ctx, "POST", fmt.Sprintf("/v1/service_account/%s/_api_token", id), req)
+// ListServiceAccountAPITokens lists API tokens issued for a service account.
+func (c *Client) ListServiceAccountAPITokens(ctx context.Context, id string) ([]APIToken, error) {
+	resp, err := c.doRequest(ctx, "GET", "/v1/service_account/"+url.PathEscape(id)+"/_api_token", nil)
 	if err != nil {
-		return "", fmt.Errorf("generate api token: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Read the response body first for better error reporting
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("read response body: %w", err)
+		return nil, fmt.Errorf("list service account api tokens: %w", err)
 	}
 
-	// Try to unmarshal as JSON first
-	var result struct {
-		Token string `json:"token"`
+	var tokens []APIToken
+	if err := decodeResponse(resp, &tokens); err != nil {
+		return nil, err
 	}
 
-	if err := json.Unmarshal(body, &result); err != nil {
-		// If JSON unmarshal fails, try treating the response as a plain string (JWT token)
-		// Remove quotes if present (API returns quoted string)
-		token := string(body)
-		if len(token) > 0 && token[0] == '"' && token[len(token)-1] == '"' {
-			token = token[1 : len(token)-1]
-		}
-		// Basic validation: JWT tokens should have at least 2 dots
-		if len(token) > 0 && strings.Count(token, ".") >= 2 {
-			return token, nil
-		}
-		return "", fmt.Errorf("decode response: %w (response body: %s)", err, string(body))
-	}
-
-	return result.Token, nil
+	return tokens, nil
 }
 
 func (c *Client) SetServiceAccountValidFrom(ctx context.Context, id, validFrom string) error {

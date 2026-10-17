@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	_ resource.Resource                = (*groupResource)(nil)
-	_ resource.ResourceWithImportState = (*groupResource)(nil)
-	_ resource.ResourceWithModifyPlan  = (*groupResource)(nil)
+	_ resource.Resource                 = (*groupResource)(nil)
+	_ resource.ResourceWithImportState  = (*groupResource)(nil)
+	_ resource.ResourceWithModifyPlan   = (*groupResource)(nil)
 	_ resource.ResourceWithUpgradeState = (*groupResource)(nil)
 )
 
@@ -111,7 +111,7 @@ resource "kanidm_group" "developers" {
 				MarkdownDescription: "Account or group ID that can manage this group. Use UUIDs or fully-qualified names.",
 				Optional:            true,
 			},
-"members": schema.SetAttribute{
+			"members": schema.SetAttribute{
 				MarkdownDescription: "Set of member IDs (persons, service accounts, or groups). " +
 					"Members are managed as a complete set - any changes will replace all members. " +
 					"Use UUIDs or fully-qualified names (e.g., `user@domain.com`).",
@@ -869,14 +869,14 @@ func (r *groupResource) UpgradeState(ctx context.Context) map[int64]resource.Sta
 		0: {
 			PriorSchema: &schema.Schema{
 				Attributes: map[string]schema.Attribute{
-					"name":              schema.StringAttribute{Required: true},
-					"id":                schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
-					"description":       schema.StringAttribute{Optional: true},
-					"mail":              schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-					"posix_enabled":     schema.BoolAttribute{Optional: true, Computed: true},
-					"gidnumber":         schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
-					"entry_managed_by":  schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType},
-					"members":           schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+					"name":             schema.StringAttribute{Required: true},
+					"id":               schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+					"description":      schema.StringAttribute{Optional: true},
+					"mail":             schema.ListAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+					"posix_enabled":    schema.BoolAttribute{Optional: true, Computed: true},
+					"gidnumber":        schema.Int64Attribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()}},
+					"entry_managed_by": schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType},
+					"members":          schema.SetAttribute{Optional: true, Computed: true, ElementType: types.StringType},
 				},
 			},
 			StateUpgrader: func(ctx context.Context, req resource.UpgradeStateRequest, resp *resource.UpgradeStateResponse) {

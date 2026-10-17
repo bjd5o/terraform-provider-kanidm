@@ -4,16 +4,20 @@ page_title: "kanidm_oauth2_basic Resource - kanidm"
 subcategory: "Access / OAuth2"
 description: |-
   Manages a Kanidm OAuth2 basic (confidential) client.
+  This resource does not read or store the client secret. Kanidm keeps the secret and will return it on request. Read it during a run with the kanidm_oauth2_basic_secret ../ephemeral-resources/oauth2_basic_secret ephemeral resource. Pass this resource's id, not its name, so the read waits until the client exists.
 ---
 
 # kanidm_oauth2_basic (Resource)
 
 Manages a Kanidm OAuth2 basic (confidential) client.
 
+This resource does not read or store the client secret. Kanidm keeps the secret and will return it on request. Read it during a run with the [`kanidm_oauth2_basic_secret`](../ephemeral-resources/oauth2_basic_secret) ephemeral resource. Pass this resource's `id`, not its name, so the read waits until the client exists.
+
 ## Example Usage
 
 ```terraform
-# Example: OAuth2 client for Grafana
+# Example: OAuth2 client for Grafana.
+# The client secret is not stored. Read it with kanidm_oauth2_basic_secret.
 resource "kanidm_oauth2_basic" "grafana" {
   name        = "grafana"
   displayname = "Grafana"
@@ -33,13 +37,6 @@ resource "kanidm_oauth2_basic" "grafana" {
     group  = "developers"
     scopes = ["openid", "profile", "email"]
   }
-}
-
-# Store the client secret securely
-output "grafana_client_secret" {
-  description = "OAuth2 client secret for Grafana"
-  value       = kanidm_oauth2_basic.grafana.client_secret
-  sensitive   = true
 }
 
 # Example: OAuth2 client for Authentik
@@ -92,18 +89,10 @@ resource "kanidm_oauth2_basic" "simple_app" {
 
 # Example: Imported existing OAuth2 client
 # Import command: terraform import kanidm_oauth2_basic.existing client_name
-# Note: Client secret will be automatically retrieved from Kanidm after import
 resource "kanidm_oauth2_basic" "existing" {
   name        = "existing-client"
   displayname = "Existing OAuth2 Client"
   origin      = "https://existing.example.com"
-}
-
-# The client secret is available even for imported clients
-output "existing_client_secret" {
-  description = "OAuth2 client secret for imported client"
-  value       = kanidm_oauth2_basic.existing.client_secret
-  sensitive   = true
 }
 ```
 
@@ -129,7 +118,6 @@ output "existing_client_secret" {
 
 ### Read-Only
 
-- `client_secret` (String, Sensitive) Client secret for the OAuth2 basic client. Only available during creation.
 - `id` (String) Stable Kanidm UUID for this OAuth2 client.
 - `image_sha256` (String) SHA-256 hash of the local image file last applied.
 

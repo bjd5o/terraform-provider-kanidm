@@ -19,6 +19,10 @@ test:
 testacc:
 	TF_ACC=1 go test -v -timeout 30m ./internal/provider/
 
+# Start Kanidm and OpenTofu and mint the provider token
+integration:
+	integration/bootstrap.sh
+
 # Generate provider code from OpenAPI schema
 generate:
 	@echo "Generating provider code from OpenAPI schema..."
@@ -55,6 +59,7 @@ help:
 	@echo "  install    - Install the provider locally for testing"
 	@echo "  test       - Run unit tests"
 	@echo "  testacc    - Run acceptance tests (requires KANIDM_URL and KANIDM_TOKEN)"
+	@echo "  integration - Start the Kanidm and OpenTofu stack and mint a token"
 	@echo "  generate   - Regenerate provider code from OpenAPI schema"
 	@echo "  docs       - Generate documentation"
 	@echo "  fmt        - Format code"

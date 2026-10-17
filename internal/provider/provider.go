@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -14,8 +15,10 @@ import (
 	"github.com/ssoriche/terraform-provider-kanidm/internal/client"
 )
 
-// Ensure the implementation satisfies the provider.Provider interface
-var _ provider.Provider = (*kanidmProvider)(nil)
+var (
+	_ provider.Provider                       = (*kanidmProvider)(nil)
+	_ provider.ProviderWithEphemeralResources = (*kanidmProvider)(nil)
+)
 
 // kanidmProvider is the provider implementation
 type kanidmProvider struct {
@@ -77,14 +80,6 @@ func (p *kanidmProvider) Schema(_ context.Context, _ provider.SchemaRequest, res
 					},
 					"legalname_management": schema.StringAttribute{
 						Description: "Default management mode for person legal names. Valid values: `managed`, `initial`.",
-						Optional:    true,
-					},
-					"generate_initial_credential_reset_token": schema.BoolAttribute{
-						Description: "Whether person resources should create an initial credential reset token during creation by default.",
-						Optional:    true,
-					},
-					"initial_credential_reset_token_ttl": schema.Int64Attribute{
-						Description: "Default TTL in seconds for initial credential reset tokens generated during person creation.",
 						Optional:    true,
 					},
 				},
@@ -159,11 +154,9 @@ func (p *kanidmProvider) Configure(ctx context.Context, req provider.ConfigureRe
 
 	apiClient := client.NewClient(url, token, opts...)
 	personDefaults := personManagementDefaults{
-		Name:                        managementModeInitial,
-		Display:                     managementModeManaged,
-		LegalName:                   managementModeInitial,
-		GenerateInitialResetToken:   false,
-		InitialResetTokenTTLSeconds: 3600,
+		Name:      managementModeInitial,
+		Display:   managementModeManaged,
+		LegalName: managementModeInitial,
 	}
 
 	if config.PersonDefaults != nil {
@@ -181,14 +174,6 @@ func (p *kanidmProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		personDefaults.Name = nameMode
 		personDefaults.Display = displayMode
 		personDefaults.LegalName = legalNameMode
-
-		if !config.PersonDefaults.GenerateInitialCredentialResetToken.IsNull() && !config.PersonDefaults.GenerateInitialCredentialResetToken.IsUnknown() {
-			personDefaults.GenerateInitialResetToken = config.PersonDefaults.GenerateInitialCredentialResetToken.ValueBool()
-		}
-
-		if !config.PersonDefaults.InitialCredentialResetTokenTTL.IsNull() && !config.PersonDefaults.InitialCredentialResetTokenTTL.IsUnknown() {
-			personDefaults.InitialResetTokenTTLSeconds = config.PersonDefaults.InitialCredentialResetTokenTTL.ValueInt64()
-		}
 	}
 
 	providerData := &providerData{
@@ -199,6 +184,7 @@ func (p *kanidmProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	// Make the client available to data sources and resources
 	resp.DataSourceData = providerData
 	resp.ResourceData = providerData
+	resp.EphemeralResourceData = providerData
 
 	tflog.Info(ctx, "Configured Kanidm client", map[string]any{
 		"success": true,
@@ -224,5 +210,11 @@ func (p *kanidmProvider) Resources(_ context.Context) []func() resource.Resource
 		NewSystemDeniedNamesResource,
 		NewOAuth2BasicResource,
 		NewOAuth2PublicResource,
+	}
+}
+
+func (p *kanidmProvider) EphemeralResources(_ context.Context) []func() ephemeral.EphemeralResource {
+	return []func() ephemeral.EphemeralResource{
+		NewOAuth2BasicSecretEphemeralResource,
 	}
 }

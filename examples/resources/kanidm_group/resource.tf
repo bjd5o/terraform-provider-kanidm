@@ -16,7 +16,7 @@ resource "kanidm_group" "admins" {
   description = "Infrastructure administrators with full access"
 
   members = [
-    kanidm_person.alice_password.id,
+    kanidm_person.alice.id,
     kanidm_person.charlie.id,
   ]
 }

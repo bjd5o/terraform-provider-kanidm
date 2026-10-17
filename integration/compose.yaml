@@ -1,0 +1,79 @@
+# Integration stack: Kanidm plus OpenTofu. integration/bootstrap.sh
+# recovers idm_admin, mints a service-account token, and writes it to
+# the kanidm-token volume. The opentofu service waits for that file.
+name: kanidm-provider-itest
+
+configs:
+  kanidm_server_toml:
+    content: |
+      version = "2"
+      bindaddress = "0.0.0.0:8443"
+      db_path = "/data/kanidm.db"
+      tls_chain = "/data/chain.pem"
+      tls_key = "/data/key.pem"
+      domain = "idm.test"
+      origin = "https://idm.test:8443"
+
+services:
+  kanidm-certs:
+    image: docker.io/kanidm/server:${KANIDM_VERSION:-1.11.2}
+    command: ["kanidmd", "cert-generate", "-c", "/kanidm/server.toml"]
+    configs:
+      - source: kanidm_server_toml
+        target: /kanidm/server.toml
+    volumes:
+      - kanidm-data:/data
+    restart: "no"
+
+  kanidm:
+    image: docker.io/kanidm/server:${KANIDM_VERSION:-1.11.2}
+    environment:
+      KANIDM_CONFIG: /kanidm/server.toml
+    configs:
+      - source: kanidm_server_toml
+        target: /kanidm/server.toml
+    volumes:
+      - kanidm-data:/data
+    ports:
+      - "127.0.0.1:${ITEST_KANIDM_PORT:-18443}:8443"
+    depends_on:
+      kanidm-certs:
+        condition: service_completed_successfully
+    networks:
+      itest:
+        aliases: [idm.test]
+
+  # kanidm CLI. Bootstrap execs into this container.
+  tools:
+    image: docker.io/kanidm/tools:${KANIDM_VERSION:-1.11.2}
+    entrypoint: ["sleep", "infinity"]
+    environment:
+      KANIDM_URL: https://idm.test:8443
+      KANIDM_CA_PATH: /data/ca.pem
+    volumes:
+      - kanidm-data:/data:ro
+      - kanidm-token:/run/kanidm
+    networks: [itest]
+    depends_on: [kanidm]
+
+  opentofu:
+    image: ghcr.io/opentofu/opentofu:${OPENTOFU_VERSION:-1.11}
+    user: "0"
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    command: ["sleep", "infinity"]
+    environment:
+      KANIDM_URL: https://idm.test:8443
+      KANIDM_CA_PATH: /data/ca.pem
+    volumes:
+      - ./opentofu-entrypoint.sh:/entrypoint.sh:ro
+      - kanidm-data:/data:ro
+      - kanidm-token:/run/kanidm:ro
+    networks: [itest]
+    depends_on: [kanidm]
+
+volumes:
+  kanidm-data:
+  kanidm-token:
+
+networks:
+  itest:

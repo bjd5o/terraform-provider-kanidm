@@ -72,15 +72,13 @@ The provider follows a clear separation of concerns:
 - **Shared Namespace**: Person accounts, service accounts, and OAuth2 clients share the same name namespace
   - Use suffixes like `-oidc` or `-oauth2` for OAuth2 clients to avoid collisions
 
-- **Sensitive Data Retrieval**: Some resources require separate API calls to retrieve secrets
-  - OAuth2 client secrets: Create returns `null`, must call `GET /v1/oauth2/{name}/_basic_secret`
-  - Service account tokens: Only available immediately after creation
+- **No secrets in state**: Resources never store credentials. `password_wo` is write-only. OAuth2 basic secrets are read only by the `kanidm_oauth2_basic_secret` ephemeral resource (`GET /v1/oauth2/{name}/_basic_secret`). Service accounts do not mint API tokens.
 
 ### Known Issues and Gotchas
 
 See `BUGFIXES.md` for detailed history of bugs and resolutions. Key points:
 
-1. **OAuth2 Secrets**: Client secrets must be retrieved via separate GET request after creation
+1. **OAuth2 Secrets**: The basic client resource does not read the secret. The ephemeral resource does, and only during a run
 2. **Group Members**: Use `SetAttribute` (not `ListAttribute`) to avoid ordering drift
 3. **Empty Collections**: Return empty slice `[]string{}`, not `nil`, to avoid null vs empty list drift
 4. **Service Account DisplayName**: Not supported by Kanidm API (persons only)
@@ -101,13 +99,11 @@ The provider accepts configuration via:
 - HCL attributes: `url`, `token`
 - Environment variables: `KANIDM_URL`, `KANIDM_TOKEN` (preferred for sensitive data)
 
-### Credential Reset Tokens
+### Credentials
 
-Person resources support generating credential reset tokens:
-- Set `generate_initial_credential_reset_token = true`
-- Optionally set `initial_credential_reset_token_ttl` (seconds, default: 3600)
-- Token available in computed attribute `initial_credential_reset_token` (sensitive)
-- Token is one-time use for setting up passkeys/passwords via web UI
+- Person passwords use `password_wo` and `password_wo_version`. Read the write-only value from `req.Config`. Apply a new password only when `password_wo_version` changes.
+- This provider does not mint credential reset tokens or service account API tokens.
+- A unit test walks every resource schema and fails if an attribute is `Sensitive` without `WriteOnly`.
 
 ## Development Environment
 

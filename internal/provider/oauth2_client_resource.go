@@ -22,9 +22,10 @@ import (
 )
 
 var (
-	_ resource.Resource                = (*oauth2ClientResource)(nil)
-	_ resource.ResourceWithImportState = (*oauth2ClientResource)(nil)
-	_ resource.ResourceWithModifyPlan  = (*oauth2ClientResource)(nil)
+	_ resource.Resource                 = (*oauth2ClientResource)(nil)
+	_ resource.ResourceWithImportState  = (*oauth2ClientResource)(nil)
+	_ resource.ResourceWithModifyPlan   = (*oauth2ClientResource)(nil)
+	_ resource.ResourceWithUpgradeState = (*oauth2ClientResource)(nil)
 )
 
 func NewOAuth2BasicResource() resource.Resource {
@@ -54,7 +55,6 @@ type oauth2ResourceModel struct {
 	PreferShortUsername      types.Bool   `tfsdk:"prefer_short_username"`
 	AllowInsecureDisablePKCE types.Bool   `tfsdk:"allow_insecure_client_disable_pkce"`
 	JWTLegacyCryptoEnable    types.Bool   `tfsdk:"jwt_legacy_crypto_enable"`
-	ClientSecret             types.String
 }
 
 type oauth2BasicResourceModel struct {
@@ -71,7 +71,6 @@ type oauth2BasicResourceModel struct {
 	PreferShortUsername      types.Bool   `tfsdk:"prefer_short_username"`
 	AllowInsecureDisablePKCE types.Bool   `tfsdk:"allow_insecure_client_disable_pkce"`
 	JWTLegacyCryptoEnable    types.Bool   `tfsdk:"jwt_legacy_crypto_enable"`
-	ClientSecret             types.String `tfsdk:"client_secret"`
 }
 
 type oauth2PublicResourceModel struct {
@@ -115,22 +114,7 @@ func resourceModelFromBasic(model oauth2BasicResourceModel) oauth2ResourceModel 
 }
 
 func resourceModelFromPublic(model oauth2PublicResourceModel) oauth2ResourceModel {
-	return oauth2ResourceModel{
-		ID:                       model.ID,
-		Name:                     model.Name,
-		DisplayName:              model.DisplayName,
-		Origin:                   model.Origin,
-		RedirectURIs:             model.RedirectURIs,
-		ImagePath:                model.ImagePath,
-		ImageSHA256:              model.ImageSHA256,
-		ScopeMaps:                model.ScopeMaps,
-		SupScopeMaps:             model.SupScopeMaps,
-		ClaimMaps:                model.ClaimMaps,
-		PreferShortUsername:      model.PreferShortUsername,
-		AllowInsecureDisablePKCE: model.AllowInsecureDisablePKCE,
-		JWTLegacyCryptoEnable:    model.JWTLegacyCryptoEnable,
-		ClientSecret:             types.StringNull(),
-	}
+	return oauth2ResourceModel(model)
 }
 
 func basicModelFromResource(model oauth2ResourceModel) oauth2BasicResourceModel {
@@ -138,21 +122,7 @@ func basicModelFromResource(model oauth2ResourceModel) oauth2BasicResourceModel 
 }
 
 func publicModelFromResource(model oauth2ResourceModel) oauth2PublicResourceModel {
-	return oauth2PublicResourceModel{
-		ID:                       model.ID,
-		Name:                     model.Name,
-		DisplayName:              model.DisplayName,
-		Origin:                   model.Origin,
-		RedirectURIs:             model.RedirectURIs,
-		ImagePath:                model.ImagePath,
-		ImageSHA256:              model.ImageSHA256,
-		ScopeMaps:                model.ScopeMaps,
-		SupScopeMaps:             model.SupScopeMaps,
-		ClaimMaps:                model.ClaimMaps,
-		PreferShortUsername:      model.PreferShortUsername,
-		AllowInsecureDisablePKCE: model.AllowInsecureDisablePKCE,
-		JWTLegacyCryptoEnable:    model.JWTLegacyCryptoEnable,
-	}
+	return oauth2PublicResourceModel(model)
 }
 
 func (r *oauth2ClientResource) getResourceModel(ctx context.Context, getter stateGetter, model *oauth2ResourceModel) diag.Diagnostics {
@@ -174,7 +144,6 @@ func (r *oauth2ClientResource) getResourceModel(ctx context.Context, getter stat
 
 func (r *oauth2ClientResource) setResourceModel(ctx context.Context, setter stateSetter, model *oauth2ResourceModel) diag.Diagnostics {
 	if r.public {
-		model.ClientSecret = types.StringNull()
 		publicModel := publicModelFromResource(*model)
 		return setter.Set(ctx, &publicModel)
 	}
@@ -219,7 +188,10 @@ func (r *oauth2ClientResource) Metadata(_ context.Context, req resource.Metadata
 }
 
 func (r *oauth2ClientResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	description := "Manages a Kanidm OAuth2 basic (confidential) client."
+	description := "Manages a Kanidm OAuth2 basic (confidential) client.\n\n" +
+		"This resource does not read or store the client secret. Kanidm keeps the secret and will return it on request. " +
+		"Read it during a run with the [`kanidm_oauth2_basic_secret`](../ephemeral-resources/oauth2_basic_secret) ephemeral resource. " +
+		"Pass this resource's `id`, not its name, so the read waits until the client exists."
 	if r.public {
 		description = "Manages a Kanidm OAuth2 public client."
 	}
@@ -271,16 +243,6 @@ func (r *oauth2ClientResource) Schema(_ context.Context, _ resource.SchemaReques
 				stringplanmodifier.UseStateForUnknown(),
 			},
 		},
-	}
-	if !r.public {
-		attributes["client_secret"] = schema.StringAttribute{
-			MarkdownDescription: "Client secret for the OAuth2 basic client. Only available during creation.",
-			Computed:            true,
-			Sensitive:           true,
-			PlanModifiers: []planmodifier.String{
-				stringplanmodifier.UseStateForUnknown(),
-			},
-		}
 	}
 	resp.Schema = schema.Schema{
 		MarkdownDescription: description,
@@ -343,6 +305,9 @@ func (r *oauth2ClientResource) Schema(_ context.Context, _ resource.SchemaReques
 				},
 			},
 		},
+	}
+	if !r.public {
+		resp.Schema.Version = 1
 	}
 }
 
@@ -800,11 +765,6 @@ func (r *oauth2ClientResource) Create(ctx context.Context, req resource.CreateRe
 		resp.Diagnostics.AddError("Error Reading OAuth2 Client", err.Error())
 		return
 	}
-	if r.public {
-		plan.ClientSecret = types.StringNull()
-	} else {
-		plan.ClientSecret = types.StringValue(oauth2Client.ClientSecret)
-	}
 	if plan.ImagePath.IsNull() || plan.ImagePath.IsUnknown() || plan.ImagePath.ValueString() == "" {
 		plan.ImageSHA256 = types.StringNull()
 	}
@@ -840,16 +800,6 @@ func (r *oauth2ClientResource) Read(ctx context.Context, req resource.ReadReques
 	if err := r.applyOAuth2BasicState(ctx, &state, oauth2Client); err != nil {
 		resp.Diagnostics.AddError("Error Reading OAuth2 Client", err.Error())
 		return
-	}
-	if r.public {
-		state.ClientSecret = types.StringNull()
-	} else if state.ClientSecret.IsNull() || state.ClientSecret.ValueString() == "" {
-		secret, err := r.client.GetOAuth2BasicSecret(ctx, oauth2Client.Name)
-		if err != nil {
-			state.ClientSecret = types.StringNull()
-		} else {
-			state.ClientSecret = types.StringValue(secret)
-		}
 	}
 	resp.Diagnostics.Append(r.setResourceModel(ctx, &resp.State, &state)...)
 }
@@ -1157,11 +1107,6 @@ func (r *oauth2ClientResource) Update(ctx context.Context, req resource.UpdateRe
 		resp.Diagnostics.AddError("Error Reading OAuth2 Client", err.Error())
 		return
 	}
-	if r.public {
-		plan.ClientSecret = types.StringNull()
-	} else {
-		plan.ClientSecret = state.ClientSecret
-	}
 	if plan.ImagePath.IsNull() || plan.ImagePath.IsUnknown() || plan.ImagePath.ValueString() == "" {
 		plan.ImageSHA256 = types.StringNull()
 	}
@@ -1196,12 +1141,68 @@ func (r *oauth2ClientResource) Delete(ctx context.Context, req resource.DeleteRe
 
 func (r *oauth2ClientResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+func (r *oauth2ClientResource) UpgradeState(context.Context) map[int64]resource.StateUpgrader {
 	if r.public {
-		return
+		return nil
 	}
-	resp.Diagnostics.AddWarning(
-		"Client Secret Not Available",
-		"The client secret for this OAuth2 basic client is not available after import. "+
-			"If you need the secret, you must regenerate it manually using the Kanidm CLI.",
-	)
+
+	prior := oauth2BasicSchema()
+	prior.Version = 0
+	prior.Attributes["client_secret"] = schema.StringAttribute{
+		Computed:  true,
+		Sensitive: true,
+	}
+
+	return map[int64]resource.StateUpgrader{
+		0: {
+			PriorSchema: &prior,
+			StateUpgrader: func(ctx context.Context, req resource.UpgradeStateRequest, resp *resource.UpgradeStateResponse) {
+				var priorState struct {
+					ID                       types.String `tfsdk:"id"`
+					Name                     types.String `tfsdk:"name"`
+					DisplayName              types.String `tfsdk:"displayname"`
+					Origin                   types.String `tfsdk:"origin"`
+					RedirectURIs             types.Set    `tfsdk:"redirect_uris"`
+					ImagePath                types.String `tfsdk:"image_path"`
+					ImageSHA256              types.String `tfsdk:"image_sha256"`
+					ScopeMaps                types.Set    `tfsdk:"scope_map"`
+					SupScopeMaps             types.Set    `tfsdk:"sup_scope_map"`
+					ClaimMaps                types.Set    `tfsdk:"claim_map"`
+					PreferShortUsername      types.Bool   `tfsdk:"prefer_short_username"`
+					AllowInsecureDisablePKCE types.Bool   `tfsdk:"allow_insecure_client_disable_pkce"`
+					JWTLegacyCryptoEnable    types.Bool   `tfsdk:"jwt_legacy_crypto_enable"`
+					ClientSecret             types.String `tfsdk:"client_secret"`
+				}
+
+				resp.Diagnostics.Append(req.State.Get(ctx, &priorState)...)
+				if resp.Diagnostics.HasError() {
+					return
+				}
+
+				resp.Diagnostics.Append(resp.State.Set(ctx, &oauth2BasicResourceModel{
+					ID:                       priorState.ID,
+					Name:                     priorState.Name,
+					DisplayName:              priorState.DisplayName,
+					Origin:                   priorState.Origin,
+					RedirectURIs:             priorState.RedirectURIs,
+					ImagePath:                priorState.ImagePath,
+					ImageSHA256:              priorState.ImageSHA256,
+					ScopeMaps:                priorState.ScopeMaps,
+					SupScopeMaps:             priorState.SupScopeMaps,
+					ClaimMaps:                priorState.ClaimMaps,
+					PreferShortUsername:      priorState.PreferShortUsername,
+					AllowInsecureDisablePKCE: priorState.AllowInsecureDisablePKCE,
+					JWTLegacyCryptoEnable:    priorState.JWTLegacyCryptoEnable,
+				})...)
+			},
+		},
+	}
+}
+
+func oauth2BasicSchema() schema.Schema {
+	var resp resource.SchemaResponse
+	(&oauth2ClientResource{}).Schema(context.Background(), resource.SchemaRequest{}, &resp)
+	return resp.Schema
 }
