@@ -79,30 +79,30 @@ release:
   mode: replace
   header: |
     ## terraform-provider-kanidm {{ .Tag }}
-    
+
     **Release Date:** {{ .Date }}
-    
-    For usage instructions, see the [README](https://github.com/seanlatimer/terraform-provider-kanidm#readme).
+
+    For usage instructions, see the [README](https://github.com/bjd5o/terraform-provider-kanidm/blob/main/README.md).
   footer: |
     ## Installation
-    
-    This release is published to the [Terraform Registry](https://registry.terraform.io/providers/seanlatimer/kanidm).
-    
+
+    This release is published to the [Terraform Registry](https://registry.terraform.io/providers/bjd5o/kanidm).
+
     To use this provider:
-    
+
     ```hcl
     terraform {
       required_providers {
         kanidm = {
-          source  = "seanlatimer/kanidm"
+          source  = "bjd5o/kanidm"
           version = "~> {{ .Major }}.{{ .Minor }}"
         }
       }
     }
     ```
-    
+
     ## Checksums
-    
+
     All release artifacts are checksummed and GPG-signed for verification.
 
 changelog:

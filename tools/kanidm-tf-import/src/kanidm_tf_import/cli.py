@@ -35,7 +35,7 @@ def _build_versions_tf() -> str:
         '\n'
         '  required_providers {\n'
         '    kanidm = {\n'
-        '      source = "seanlatimer/kanidm"\n'
+        '      source = "bjd5o/kanidm"\n'
         '    }\n'
         '  }\n'
         '}\n'

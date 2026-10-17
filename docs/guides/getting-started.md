@@ -12,7 +12,7 @@ This guide shows the minimal steps to authenticate to Kanidm and create a few co
 
 - A running Kanidm instance
 - An API token with permission to manage the resources you want to create
-- OpenTofu or Terraform configured to use `seanlatimer/kanidm`
+- OpenTofu or Terraform configured to use `bjd5o/kanidm`
 
 ## Provider Configuration
 
@@ -20,7 +20,7 @@ This guide shows the minimal steps to authenticate to Kanidm and create a few co
 terraform {
   required_providers {
     kanidm = {
-      source = "seanlatimer/kanidm"
+      source = "bjd5o/kanidm"
     }
   }
 }

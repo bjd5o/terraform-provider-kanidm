@@ -17,7 +17,7 @@ The provider manages Kanidm identities, groups, OAuth2 clients, application entr
 terraform {
   required_providers {
     kanidm = {
-      source = "seanlatimer/kanidm"
+      source = "bjd5o/kanidm"
     }
   }
 }
@@ -37,7 +37,7 @@ provider "kanidm" {}
 terraform {
   required_providers {
     kanidm = {
-      source = "seanlatimer/kanidm"
+      source = "bjd5o/kanidm"
     }
     onepassword = {
       source  = "1Password/onepassword"

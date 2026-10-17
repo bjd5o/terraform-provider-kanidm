@@ -10,7 +10,7 @@ updates:
       timezone: "America/New_York"
     open-pull-requests-limit: 10
     reviewers:
-      - "seanlatimer"
+      - "bjd5o"
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
@@ -41,7 +41,7 @@ updates:
       timezone: "America/New_York"
     open-pull-requests-limit: 5
     reviewers:
-      - "seanlatimer"
+      - "bjd5o"
     commit-message:
       prefix: "chore(ci)"
       include: "scope"
