@@ -227,41 +227,6 @@ func (r *serviceAccountResource) resolveManagerUUID(ctx context.Context, identif
 	return "", client.ErrNotFound
 }
 
-func (r *serviceAccountResource) normalizeEntryManagedBy(ctx context.Context, managers []string) ([]string, error) {
-	if len(managers) == 0 {
-		return []string{}, nil
-	}
-	normalized := make([]string, 0, len(managers))
-	for _, manager := range managers {
-		uuid, err := r.resolveManagerUUID(ctx, manager)
-		if err == nil {
-			normalized = append(normalized, uuid)
-			continue
-		}
-		if errors.Is(err, client.ErrNotFound) {
-			normalized = append(normalized, manager)
-			continue
-		}
-		return nil, err
-	}
-	return normalized, nil
-}
-
-func (r *serviceAccountResource) resolveEntryManagedBySPNs(ctx context.Context, managers []string) ([]string, error) {
-	if len(managers) == 0 {
-		return []string{}, nil
-	}
-	resolved := make([]string, 0, len(managers))
-	for _, manager := range managers {
-		spn, err := r.resolveManagerSPN(ctx, manager)
-		if err != nil {
-			return nil, err
-		}
-		resolved = append(resolved, spn)
-	}
-	return resolved, nil
-}
-
 func (r *serviceAccountResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.Plan.Raw.IsNull() {
 		return
@@ -392,13 +357,7 @@ func (r *serviceAccountResource) Create(ctx context.Context, req resource.Create
 		"displayname": plan.DisplayName.ValueString(),
 	})
 
-	// Extract entry_managed_by (required)
-	var entryManagedBy []string
 	var mail []string
-	var err error
-	if !plan.EntryManagedBy.IsNull() && !plan.EntryManagedBy.IsUnknown() {
-		entryManagedBy = []string{plan.EntryManagedBy.ValueString()}
-	}
 	if !plan.Mail.IsNull() && !plan.Mail.IsUnknown() {
 		resp.Diagnostics.Append(plan.Mail.ElementsAs(ctx, &mail, false)...)
 		if resp.Diagnostics.HasError() {
@@ -410,7 +369,7 @@ func (r *serviceAccountResource) Create(ctx context.Context, req resource.Create
 		resp.Diagnostics.AddError("Error Resolving entry_managed_by", err.Error())
 		return
 	}
-	entryManagedBy = []string{spn}
+	entryManagedBy := []string{spn}
 
 	sa, err := r.client.CreateServiceAccount(ctx, plan.Name.ValueString(), plan.DisplayName.ValueString(), entryManagedBy)
 	if err != nil {

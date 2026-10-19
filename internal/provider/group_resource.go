@@ -197,41 +197,6 @@ func (r *groupResource) resolveManagerUUID(ctx context.Context, identifier strin
 	return "", client.ErrNotFound
 }
 
-func (r *groupResource) normalizeEntryManagedBy(ctx context.Context, managers []string) ([]string, error) {
-	if len(managers) == 0 {
-		return []string{}, nil
-	}
-	normalized := make([]string, 0, len(managers))
-	for _, manager := range managers {
-		uuid, err := r.resolveManagerUUID(ctx, manager)
-		if err == nil {
-			normalized = append(normalized, uuid)
-			continue
-		}
-		if errors.Is(err, client.ErrNotFound) {
-			normalized = append(normalized, manager)
-			continue
-		}
-		return nil, err
-	}
-	return normalized, nil
-}
-
-func (r *groupResource) resolveEntryManagedBySPNs(ctx context.Context, managers []string) ([]string, error) {
-	if len(managers) == 0 {
-		return []string{}, nil
-	}
-	resolved := make([]string, 0, len(managers))
-	for _, manager := range managers {
-		spn, err := r.resolveManagerSPN(ctx, manager)
-		if err != nil {
-			return nil, err
-		}
-		resolved = append(resolved, spn)
-	}
-	return resolved, nil
-}
-
 func (r *groupResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.Plan.Raw.IsNull() {
 		return
@@ -406,11 +371,7 @@ func (r *groupResource) applyGroupState(ctx context.Context, model *groupResourc
 				model.Members = membersSet
 			}
 		} else {
-			finalMembers := make([]string, len(apiUUIDs))
-			for i, uuid := range apiUUIDs {
-				finalMembers[i] = uuid
-			}
-			membersSet, diags := types.SetValueFrom(ctx, types.StringType, finalMembers)
+			membersSet, diags := types.SetValueFrom(ctx, types.StringType, apiUUIDs)
 			if diags.HasError() {
 				return fmt.Errorf("convert members set: %s", diags.Errors()[0].Summary())
 			}
