@@ -15,7 +15,7 @@ The official Terraform provider for [Kanidm](https://kanidm.com), enabling Infra
 ## Requirements
 
 - [OpenTofu](https://opentofu.org/) or [Terraform](https://www.terraform.io/downloads.html) >= 1.11 (required for write-only attributes)
-- [Go](https://golang.org/doc/install) >= 1.24 (for development)
+- [Go](https://golang.org/doc/install) >= 1.26 (for development)
 - [Kanidm](https://kanidm.com) >= 1.8.5
 
 ## Installation
@@ -124,6 +124,7 @@ ephemeral "kanidm_oauth2_basic_secret" "grafana" {
 
 - `url` - (Required) Kanidm server URL (e.g., `https://idm.example.com`)
 - `token` - (Required) Service account API token for authentication
+- `ca_certificate_file` - (Optional) PEM file used to verify Kanidm. Replaces the system roots for provider requests
 
 ### Environment Variables
 
@@ -132,6 +133,7 @@ You can also configure the provider using environment variables:
 ```bash
 export KANIDM_URL="https://idm.example.com"
 export KANIDM_TOKEN="your-api-token"
+export KANIDM_CA_CERTIFICATE_FILE="/path/to/ca.pem"
 ```
 
 ### Using with 1Password Provider

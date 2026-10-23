@@ -1,6 +1,6 @@
 module github.com/ssoriche/terraform-provider-kanidm
 
-go 1.26.3
+go 1.27.3
 
 require (
 	github.com/hashicorp/terraform-plugin-docs v0.25.0

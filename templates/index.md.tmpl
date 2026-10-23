@@ -40,6 +40,7 @@ The provider manages Kanidm identities, groups, OAuth2 clients, application entr
 - `kanidm_account_policy` is a separate resource so policies can be attached to both built-in and user-managed groups.
 - `kanidm_system_denied_names` is a singleton-style resource and depends on healthy Kanidm system configuration entries.
 - For lab or self-signed environments you can set `insecure_skip_verify = true` or `KANIDM_INSECURE_SKIP_VERIFY=true`.
+- Set `ca_certificate_file` or `KANIDM_CA_CERTIFICATE_FILE` to a PEM bundle when Kanidm's certificate is not signed by a system root. That file replaces the system roots for provider requests.
 - `kanidm_person.password_wo` requires OpenTofu or Terraform 1.11 or later. Increase `password_wo_version` to change the password.
 - Read an OAuth2 basic client secret with `kanidm_oauth2_basic_secret`. Pass the client's `id` so the read waits until apply when the client is created in the same run.
 

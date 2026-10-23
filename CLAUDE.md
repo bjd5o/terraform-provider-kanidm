@@ -96,8 +96,8 @@ Each resource follows this structure:
 ### Provider Configuration
 
 The provider accepts configuration via:
-- HCL attributes: `url`, `token`
-- Environment variables: `KANIDM_URL`, `KANIDM_TOKEN` (preferred for sensitive data)
+- HCL attributes: `url`, `token`, `ca_certificate_file`
+- Environment variables: `KANIDM_URL`, `KANIDM_TOKEN`, `KANIDM_CA_CERTIFICATE_FILE` (preferred for sensitive data)
 
 ### Credentials
 

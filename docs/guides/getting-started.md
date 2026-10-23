@@ -31,6 +31,16 @@ provider "kanidm" {
 }
 ```
 
+For a certificate signed by a private or staging root:
+
+```hcl
+provider "kanidm" {
+  url                 = var.kanidm_url
+  token               = var.kanidm_token
+  ca_certificate_file = "/path/to/ca.pem"
+}
+```
+
 For self-signed development environments:
 
 ```hcl

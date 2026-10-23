@@ -29,6 +29,7 @@ type kanidmProvider struct {
 type kanidmProviderModel struct {
 	URL                types.String         `tfsdk:"url"`
 	Token              types.String         `tfsdk:"token"`
+	CACertificateFile  types.String         `tfsdk:"ca_certificate_file"`
 	InsecureSkipVerify types.Bool           `tfsdk:"insecure_skip_verify"`
 	PersonDefaults     *personDefaultsModel `tfsdk:"person_defaults"`
 }
@@ -61,6 +62,10 @@ func (p *kanidmProvider) Schema(_ context.Context, _ provider.SchemaRequest, res
 				Description: "Kanidm API token for authentication. May also be provided via KANIDM_TOKEN environment variable.",
 				Optional:    true,
 				Sensitive:   true,
+			},
+			"ca_certificate_file": schema.StringAttribute{
+				Description: "PEM file used to verify Kanidm. Replaces the system roots for provider requests. May also be provided via KANIDM_CA_CERTIFICATE_FILE.",
+				Optional:    true,
 			},
 			"insecure_skip_verify": schema.BoolAttribute{
 				Description: "Disable TLS certificate verification. Only use for testing against trusted self-signed endpoints. May also be enabled via KANIDM_INSECURE_SKIP_VERIFY.",
@@ -136,6 +141,18 @@ func (p *kanidmProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		insecureSkipVerify = config.InsecureSkipVerify.ValueBool()
 	}
 
+	caFile := os.Getenv("KANIDM_CA_CERTIFICATE_FILE")
+	if !config.CACertificateFile.IsNull() && !config.CACertificateFile.IsUnknown() {
+		caFile = config.CACertificateFile.ValueString()
+	}
+	if caFile != "" && insecureSkipVerify {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("ca_certificate_file"),
+			"Conflicting TLS settings",
+			"ca_certificate_file and insecure_skip_verify cannot be set together.",
+		)
+	}
+
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -143,10 +160,23 @@ func (p *kanidmProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	// Create Kanidm client
 	tflog.Debug(ctx, "Creating Kanidm client", map[string]any{
 		"url":                  url,
+		"ca_certificate_file":  caFile,
 		"insecure_skip_verify": insecureSkipVerify,
 	})
 
 	opts := []client.ClientOption{}
+	if caFile != "" {
+		opt, err := client.WithCACertificateFile(caFile)
+		if err != nil {
+			resp.Diagnostics.AddAttributeError(
+				path.Root("ca_certificate_file"),
+				"Invalid CA certificate file",
+				err.Error(),
+			)
+			return
+		}
+		opts = append(opts, opt)
+	}
 	if insecureSkipVerify {
 		opts = append(opts, client.WithInsecureSkipVerify())
 		tflog.Warn(ctx, "TLS certificate verification disabled - only safe against trusted local servers")

@@ -24,8 +24,9 @@ terraform {
 
 # Configure the Kanidm Provider with explicit credentials
 provider "kanidm" {
-  url   = "https://idm.s8i.ca"
-  token = var.kanidm_token
+  url                 = "https://idm.s8i.ca"
+  token               = var.kanidm_token
+  ca_certificate_file = "/path/to/ca.pem"
 }
 
 # Alternative: Configure using environment variables
@@ -77,6 +78,7 @@ provider "kanidm" {
 - `kanidm_account_policy` is a separate resource so policies can be attached to both built-in and user-managed groups.
 - `kanidm_system_denied_names` is a singleton-style resource and depends on healthy Kanidm system configuration entries.
 - For lab or self-signed environments you can set `insecure_skip_verify = true` or `KANIDM_INSECURE_SKIP_VERIFY=true`.
+- Set `ca_certificate_file` or `KANIDM_CA_CERTIFICATE_FILE` to a PEM bundle when Kanidm's certificate is not signed by a system root. That file replaces the system roots for provider requests.
 - `kanidm_person.password_wo` requires OpenTofu or Terraform 1.11 or later. Increase `password_wo_version` to change the password.
 - Read an OAuth2 basic client secret with `kanidm_oauth2_basic_secret`. Pass the client's `id` so the read waits until apply when the client is created in the same run.
 
@@ -89,6 +91,7 @@ provider "kanidm" {
 
 ### Optional
 
+- `ca_certificate_file` (String) PEM file used to verify Kanidm. Replaces the system roots for provider requests. May also be provided via KANIDM_CA_CERTIFICATE_FILE.
 - `insecure_skip_verify` (Boolean) Disable TLS certificate verification. Only use for testing against trusted self-signed endpoints. May also be enabled via KANIDM_INSECURE_SKIP_VERIFY.
 - `person_defaults` (Attributes) Default management behavior for person resources. (see [below for nested schema](#nestedatt--person_defaults))
 - `token` (String, Sensitive) Kanidm API token for authentication. May also be provided via KANIDM_TOKEN environment variable.

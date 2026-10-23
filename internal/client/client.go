@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -50,16 +52,36 @@ func WithTimeout(timeout time.Duration) ClientOption {
 // WithInsecureSkipVerify disables TLS certificate verification.
 func WithInsecureSkipVerify() ClientOption {
 	return func(c *Client) {
-		transport, ok := c.httpClient.Transport.(*http.Transport)
-		if !ok || transport == nil {
-			transport = http.DefaultTransport.(*http.Transport).Clone()
-		}
-		if transport.TLSClientConfig == nil {
-			transport.TLSClientConfig = &tls.Config{}
-		}
-		transport.TLSClientConfig.InsecureSkipVerify = true
+		c.tlsConfig().InsecureSkipVerify = true
+	}
+}
+
+// WithCACertificateFile verifies Kanidm with the PEM certificates in path.
+// The file replaces the system roots for this client.
+func WithCACertificateFile(path string) (ClientOption, error) {
+	pemBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read CA certificate file: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		return nil, fmt.Errorf("CA certificate file %s contains no valid PEM certificates", path)
+	}
+	return func(c *Client) {
+		c.tlsConfig().RootCAs = pool
+	}, nil
+}
+
+func (c *Client) tlsConfig() *tls.Config {
+	transport, ok := c.httpClient.Transport.(*http.Transport)
+	if !ok || transport == nil {
+		transport = http.DefaultTransport.(*http.Transport).Clone()
 		c.httpClient.Transport = transport
 	}
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	return transport.TLSClientConfig
 }
 
 // NewClient creates a new Kanidm API client

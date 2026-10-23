@@ -8,8 +8,9 @@ terraform {
 
 # Configure the Kanidm Provider with explicit credentials
 provider "kanidm" {
-  url   = "https://idm.s8i.ca"
-  token = var.kanidm_token
+  url                 = "https://idm.s8i.ca"
+  token               = var.kanidm_token
+  ca_certificate_file = "/path/to/ca.pem"
 }
 
 # Alternative: Configure using environment variables
