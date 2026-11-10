@@ -102,7 +102,8 @@ The provider accepts configuration via:
 ### Credentials
 
 - Person passwords use `password_wo` and `password_wo_version`. Read the write-only value from `req.Config`. Apply a new password only when `password_wo_version` changes.
-- This provider does not mint credential reset tokens or service account API tokens.
+- `credentials_version` on a person asks Kanidm to send a credential reset token (`POST /v1/person/{id}/_credential/_update_intent_send`). Kanidm queues the token in a message and a mail sender delivers it. The provider only gets a message ID back and never sees the token. Send only when the planned version is set and differs from state. This is queue-only: do not poll the message queue for delivery, because that blocks applies on the mail pipeline and the queued message holds the token.
+- This provider does not read credential reset tokens or mint service account API tokens.
 - A unit test walks every resource schema and fails if an attribute is `Sensitive` without `WriteOnly`.
 
 ## Development Environment

@@ -15,7 +15,17 @@ description: |-
     password_wo_version = 1
   }
   
-  Credential reset tokens are minted outside OpenTofu, for example by the mailer. This resource does not generate them.
+  Credential reset
+  Set credentials_version to ask Kanidm to send the person a credential reset token. Kanidm mints the token and queues a message for the person's primary mail address. A mail sender such as kanidm-mail-sender delivers it later. The token never reaches OpenTofu, so it is not in the plan or state.
+  A message is queued when the person is created with credentials_version set, and again each time the value changes. Changing mail alone does not queue a message. Removing the attribute does not queue a message.
+  Delivery is asynchronous and OpenTofu does not check it. A successful apply means Kanidm queued the message, not that it was sent or received. The apply fails only when Kanidm rejects the request, for example when the person has no mail or the provider account lacks permission. If the message is not delivered, change credentials_version again to queue a new one.
+  
+  resource "kanidm_person" "bob" {
+    name                = "bob"
+    displayname         = "Bob"
+    mail                = ["bob@example.com"]
+    credentials_version = 1
+  }
 ---
 
 # kanidm_person (Resource)
@@ -37,7 +47,22 @@ resource "kanidm_person" "alice" {
 }
 ```
 
-Credential reset tokens are minted outside OpenTofu, for example by the mailer. This resource does not generate them.
+## Credential reset
+
+Set `credentials_version` to ask Kanidm to send the person a credential reset token. Kanidm mints the token and queues a message for the person's primary `mail` address. A mail sender such as `kanidm-mail-sender` delivers it later. The token never reaches OpenTofu, so it is not in the plan or state.
+
+A message is queued when the person is created with `credentials_version` set, and again each time the value changes. Changing `mail` alone does not queue a message. Removing the attribute does not queue a message.
+
+Delivery is asynchronous and OpenTofu does not check it. A successful apply means Kanidm queued the message, not that it was sent or received. The apply fails only when Kanidm rejects the request, for example when the person has no `mail` or the provider account lacks permission. If the message is not delivered, change `credentials_version` again to queue a new one.
+
+```hcl
+resource "kanidm_person" "bob" {
+  name                = "bob"
+  displayname         = "Bob"
+  mail                = ["bob@example.com"]
+  credentials_version = 1
+}
+```
 
 ## Example Usage
 
@@ -53,12 +78,18 @@ resource "kanidm_person" "alice" {
   password_wo_version = 1
 }
 
-# Example: Person account without a password.
-# Credential reset tokens are minted outside OpenTofu, for example by the mailer.
+# Example: Person account that sets up its own credentials.
+# Kanidm queues a credential reset token message for the primary mail address
+# (the first entry) when the person is created, and queues another each time
+# credentials_version changes. A mail sender such as kanidm-mail-sender
+# delivers it later. OpenTofu does not check delivery, so if the message does
+# not arrive, change credentials_version again. The token is not stored in the
+# plan or state.
 resource "kanidm_person" "charlie" {
-  name        = "charlie"
-  displayname = "Charlie Brown"
-  mail        = ["charlie@example.com", "cbrown@example.com"]
+  name                = "charlie"
+  displayname         = "Charlie Brown"
+  mail                = ["charlie@example.com", "cbrown@example.com"]
+  credentials_version = 1
 }
 
 # Example: Imported existing person account
@@ -81,6 +112,7 @@ resource "kanidm_person" "existing_user" {
 
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
+- `credentials_version` (Number) Set it, or change it, to have Kanidm queue a credential reset token message for the person's primary `mail` address. A mail sender delivers it later. Delivery is not checked: a successful apply means the message was queued, not delivered. If it is not delivered, change the value again. The token is not stored in the plan or state. Removing the attribute queues nothing.
 - `display_management` (String) How Terraform manages `displayname`. Valid values: `managed`, `initial`.
 - `expire_at` (String) RFC3339 time when the person account expires. Use `null` to leave unset.
 - `gidnumber` (Number) Optional POSIX gidnumber for the person. Computed after POSIX is enabled, even when Kanidm generates the value.

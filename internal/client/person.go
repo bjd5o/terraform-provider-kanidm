@@ -250,3 +250,33 @@ func (c *Client) SetPersonPassword(ctx context.Context, id, password string) err
 	_ = resp.Body.Close()
 	return nil
 }
+
+// SendPersonCredentialResetToken asks Kanidm to queue a credential reset
+// message for the person. Kanidm mints the token and puts it only in the
+// queued message. A mail sender delivers it. The token is never returned to
+// the caller. The response is the ID of the queued message.
+//
+// ttl of 0 uses the Kanidm default (one hour). An empty email sends to the
+// person's primary mail address.
+func (c *Client) SendPersonCredentialResetToken(ctx context.Context, id string, ttl int64, email string) (string, error) {
+	body := struct {
+		TTL   *int64  `json:"ttl"`
+		Email *string `json:"email"`
+	}{}
+	if ttl > 0 {
+		body.TTL = &ttl
+	}
+	if email != "" {
+		body.Email = &email
+	}
+
+	resp, err := c.doRequest(ctx, "POST", "/v1/person/"+url.PathEscape(id)+"/_credential/_update_intent_send", body)
+	if err != nil {
+		return "", fmt.Errorf("send credential reset token: %w", err)
+	}
+	var messageID string
+	if err := decodeResponse(resp, &messageID); err != nil {
+		return "", fmt.Errorf("send credential reset token: %w", err)
+	}
+	return messageID, nil
+}

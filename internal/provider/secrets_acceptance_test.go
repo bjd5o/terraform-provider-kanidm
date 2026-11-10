@@ -136,6 +136,33 @@ func TestAccPersonPasswordWriteOnly(t *testing.T) {
 	})
 }
 
+func TestAccPersonCredentialsVersion(t *testing.T) {
+	name := acctest.RandomWithPrefix("tfreset")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProviderFactories(),
+		PreCheck:                 func() { testAccPreCheck(t) },
+		Steps: []resource.TestStep{
+			{
+				Config: personCredentialsConfig(name, 1),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("kanidm_person.test", "credentials_version", "1"),
+					resource.TestCheckNoResourceAttr("kanidm_person.test", "initial_credential_reset_token"),
+				),
+			},
+			{
+				Config:             personCredentialsConfig(name, 1),
+				PlanOnly:           true,
+				ExpectNonEmptyPlan: false,
+			},
+			{
+				Config: personCredentialsConfig(name, 2),
+				Check:  resource.TestCheckResourceAttr("kanidm_person.test", "credentials_version", "2"),
+			},
+		},
+	})
+}
+
 func TestAccOAuth2BasicNoSecret(t *testing.T) {
 	name := acctest.RandomWithPrefix("tfoauth")
 	config := oauth2Config(name, "Grafana")
@@ -220,6 +247,17 @@ resource "kanidm_person" "test" {
   password_wo_version = %d
 }
 `, name, password, version)
+}
+
+func personCredentialsConfig(name string, version int) string {
+	return testAccProviderConfig() + fmt.Sprintf(`
+resource "kanidm_person" "test" {
+  name                = %q
+  displayname         = "Acceptance"
+  mail                = ["%s@example.com"]
+  credentials_version = %d
+}
+`, name, name, version)
 }
 
 func oauth2Config(name, displayName string) string {

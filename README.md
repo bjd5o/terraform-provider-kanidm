@@ -50,7 +50,7 @@ go build -o terraform-provider-kanidm
 
 ### Person Account
 
-`password_wo` is sent to Kanidm and is not stored. Increase `password_wo_version` to change it. Credential reset tokens are minted outside OpenTofu.
+`password_wo` is sent to Kanidm and is not stored. Increase `password_wo_version` to change it. Set or change `credentials_version` to have Kanidm queue a credential reset token email for the person. The token is not returned to OpenTofu. Delivery is asynchronous and not checked, so if the email does not arrive, change `credentials_version` again.
 
 ```hcl
 resource "kanidm_person" "alice" {

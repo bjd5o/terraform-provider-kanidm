@@ -1,4 +1,4 @@
-.PHONY: default build install test testacc generate clean fmt lint help
+.PHONY: default build install test testacc generate clean fmt lint docs help
 
 default: build
 

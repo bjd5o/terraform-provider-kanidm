@@ -1,0 +1,1 @@
+terraform import kanidm_system_denied_names.this denied_names

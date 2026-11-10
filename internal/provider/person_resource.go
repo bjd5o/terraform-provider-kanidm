@@ -52,6 +52,7 @@ type personResourceModel struct {
 	Mail                types.List   `tfsdk:"mail"`
 	PasswordWO          types.String `tfsdk:"password_wo"`
 	PasswordWOVersion   types.Int64  `tfsdk:"password_wo_version"`
+	CredentialsVersion  types.Int64  `tfsdk:"credentials_version"`
 }
 
 // Metadata returns the resource type name
@@ -79,7 +80,22 @@ resource "kanidm_person" "alice" {
 }
 ` + "```" + `
 
-Credential reset tokens are minted outside OpenTofu, for example by the mailer. This resource does not generate them.`,
+## Credential reset
+
+Set ` + "`credentials_version`" + ` to ask Kanidm to send the person a credential reset token. Kanidm mints the token and queues a message for the person's primary ` + "`mail`" + ` address. A mail sender such as ` + "`kanidm-mail-sender`" + ` delivers it later. The token never reaches OpenTofu, so it is not in the plan or state.
+
+A message is queued when the person is created with ` + "`credentials_version`" + ` set, and again each time the value changes. Changing ` + "`mail`" + ` alone does not queue a message. Removing the attribute does not queue a message.
+
+Delivery is asynchronous and OpenTofu does not check it. A successful apply means Kanidm queued the message, not that it was sent or received. The apply fails only when Kanidm rejects the request, for example when the person has no ` + "`mail`" + ` or the provider account lacks permission. If the message is not delivered, change ` + "`credentials_version`" + ` again to queue a new one.
+
+` + "```hcl" + `
+resource "kanidm_person" "bob" {
+  name                = "bob"
+  displayname         = "Bob"
+  mail                = ["bob@example.com"]
+  credentials_version = 1
+}
+` + "```" + ``,
 
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
@@ -155,6 +171,12 @@ Credential reset tokens are minted outside OpenTofu, for example by the mailer. 
 			},
 			"password_wo_version": schema.Int64Attribute{
 				MarkdownDescription: "Version of `password_wo`. Only this number is stored. Increase it to apply a new password. Changing `password_wo` alone does nothing.",
+				Optional:            true,
+			},
+			"credentials_version": schema.Int64Attribute{
+				MarkdownDescription: "Set it, or change it, to have Kanidm queue a credential reset token message for the person's primary `mail` address. A mail sender delivers it later. " +
+					"Delivery is not checked: a successful apply means the message was queued, not delivered. If it is not delivered, change the value again. " +
+					"The token is not stored in the plan or state. Removing the attribute queues nothing.",
 				Optional:            true,
 			},
 		},
@@ -446,6 +468,16 @@ func (r *personResource) Create(ctx context.Context, req resource.CreateRequest,
 		}
 	}
 
+	if !plan.CredentialsVersion.IsNull() && !plan.CredentialsVersion.IsUnknown() {
+		if err := r.sendCredentialResetToken(ctx, person.Name); err != nil {
+			resp.Diagnostics.AddError(
+				"Error Sending Credential Reset Token",
+				"Person was created but the credential reset token could not be sent: "+err.Error(),
+			)
+			return
+		}
+	}
+
 	// Read back the person to get the current state
 	createdPerson, err := r.client.GetPerson(ctx, person.Name)
 	if err != nil {
@@ -690,6 +722,18 @@ func (r *personResource) Update(ctx context.Context, req resource.UpdateRequest,
 		}
 	}
 
+	// Only a credentials_version change queues a message. Mail was updated
+	// above, so when both change in one apply the message uses the new address.
+	if credentialsVersionChanged(plan.CredentialsVersion, state.CredentialsVersion) {
+		if err := r.sendCredentialResetToken(ctx, state.ID.ValueString()); err != nil {
+			resp.Diagnostics.AddError(
+				"Error Sending Credential Reset Token",
+				"Person was updated but the credential reset token could not be sent: "+err.Error(),
+			)
+			return
+		}
+	}
+
 	// Read back the updated person
 	updatedPerson, err := r.client.GetPerson(ctx, state.ID.ValueString())
 	if err != nil {
@@ -765,6 +809,30 @@ func (r *personResource) ImportState(ctx context.Context, req resource.ImportSta
 	tflog.Debug(ctx, "Imported person", map[string]any{
 		"id": req.ID,
 	})
+}
+
+// credentialsVersionChanged reports whether a credential reset token should be
+// sent: the planned version is known and differs from the stored one. Removing
+// the version sends nothing.
+func credentialsVersionChanged(plan, state types.Int64) bool {
+	if plan.IsNull() || plan.IsUnknown() {
+		return false
+	}
+	return !plan.Equal(state)
+}
+
+// sendCredentialResetToken asks Kanidm to queue a reset message. It returns
+// once the message is queued. Delivery happens later and is not checked.
+func (r *personResource) sendCredentialResetToken(ctx context.Context, id string) error {
+	messageID, err := r.client.SendPersonCredentialResetToken(ctx, id, 0, "")
+	if err != nil {
+		return err
+	}
+	tflog.Info(ctx, "Queued credential reset message for person", map[string]any{
+		"id":         id,
+		"message_id": messageID,
+	})
+	return nil
 }
 
 func configuredPassword(config personResourceModel) (string, bool) {

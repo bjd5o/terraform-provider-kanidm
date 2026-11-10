@@ -9,12 +9,18 @@ resource "kanidm_person" "alice" {
   password_wo_version = 1
 }
 
-# Example: Person account without a password.
-# Credential reset tokens are minted outside OpenTofu, for example by the mailer.
+# Example: Person account that sets up its own credentials.
+# Kanidm queues a credential reset token message for the primary mail address
+# (the first entry) when the person is created, and queues another each time
+# credentials_version changes. A mail sender such as kanidm-mail-sender
+# delivers it later. OpenTofu does not check delivery, so if the message does
+# not arrive, change credentials_version again. The token is not stored in the
+# plan or state.
 resource "kanidm_person" "charlie" {
-  name        = "charlie"
-  displayname = "Charlie Brown"
-  mail        = ["charlie@example.com", "cbrown@example.com"]
+  name                = "charlie"
+  displayname         = "Charlie Brown"
+  mail                = ["charlie@example.com", "cbrown@example.com"]
+  credentials_version = 1
 }
 
 # Example: Imported existing person account
