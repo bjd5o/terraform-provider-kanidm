@@ -177,7 +177,7 @@ resource "kanidm_person" "bob" {
 				MarkdownDescription: "Set it, or change it, to have Kanidm queue a credential reset token message for the person's primary `mail` address. A mail sender delivers it later. " +
 					"Delivery is not checked: a successful apply means the message was queued, not delivered. If it is not delivered, change the value again. " +
 					"The token is not stored in the plan or state. Removing the attribute queues nothing.",
-				Optional:            true,
+				Optional: true,
 			},
 		},
 		Version: 1,
